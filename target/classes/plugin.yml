@@ -1,5 +1,5 @@
 name: QcPet
-version: '1.1.0'
+version: '1.1.1'
 main: org.bxwbb.qcpet.QcPet
 api-version: '1.21'
 author: BXWBB

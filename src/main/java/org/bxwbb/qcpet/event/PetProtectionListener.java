@@ -110,6 +110,9 @@ public class PetProtectionListener implements Listener {
 
     @EventHandler
     public void onPetSpawnByPet(CreatureSpawnEvent event) {
+        if (plugin.getPetManger().isInternalPetSpawnInProgress()) {
+            return;
+        }
         if (event.getSpawnReason() != CreatureSpawnEvent.SpawnReason.SPELL
                 && event.getSpawnReason() != CreatureSpawnEvent.SpawnReason.EXPLOSION
                 && event.getSpawnReason() != CreatureSpawnEvent.SpawnReason.CUSTOM) {

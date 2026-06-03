@@ -75,6 +75,7 @@ public class PetManger {
     private final QcPet plugin;
     public final Map<UUID, List<Pet>> pets = new HashMap<>();
     private final BukkitTask followTask;
+    private int internalSpawnDepth;
 
     public PetManger(QcPet plugin) {
         this.plugin = plugin;
@@ -1398,7 +1399,12 @@ public class PetManger {
         } else if (petConfig.entityType() == EntityType.PLAYER) {
             entity = spawnPlayerPetEntity(player, pet);
         } else {
-            entity = player.getWorld().spawnEntity(player.getLocation(), petConfig.entityType());
+            internalSpawnDepth++;
+            try {
+                entity = player.getWorld().spawnEntity(player.getLocation(), petConfig.entityType());
+            } finally {
+                internalSpawnDepth = Math.max(0, internalSpawnDepth - 1);
+            }
         }
         Pet appliedPet = applyEntityState(player, pet, entity);
         Pet updated = copyPet(appliedPet, true, entity);
@@ -1415,6 +1421,10 @@ public class PetManger {
             plugin.getPetUtil().savePetAsync(updated);
         }
         return updated;
+    }
+
+    public boolean isInternalPetSpawnInProgress() {
+        return internalSpawnDepth > 0;
     }
 
     private void handlePetSpawnFailure(Player player, Pet pet, Exception exception, boolean persistImmediately) {
