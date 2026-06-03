@@ -10,6 +10,7 @@ import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.entity.EntityMountEvent;
 import org.bukkit.event.entity.EntityTargetEvent;
 import org.bukkit.event.entity.ExplosionPrimeEvent;
 import org.bukkit.event.entity.ProjectileLaunchEvent;
@@ -123,6 +124,21 @@ public class PetProtectionListener implements Listener {
                 event.setCancelled(true);
                 return;
             }
+        }
+    }
+
+    @EventHandler
+    public void onPetMount(EntityMountEvent event) {
+        Pet pet = plugin.getPetManger().getPetByEntity(event.getMount());
+        if (pet == null) {
+            return;
+        }
+        if (!(event.getEntity() instanceof Player player)) {
+            event.setCancelled(true);
+            return;
+        }
+        if (pet.owner() == null || !pet.owner().getUniqueId().equals(player.getUniqueId())) {
+            event.setCancelled(true);
         }
     }
 }

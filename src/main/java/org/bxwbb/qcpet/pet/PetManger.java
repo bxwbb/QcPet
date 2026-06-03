@@ -16,13 +16,22 @@ import org.bukkit.entity.Bee;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Flying;
+import org.bukkit.entity.Ageable;
 import org.bukkit.entity.Creeper;
 import org.bukkit.entity.ArmorStand;
+import org.bukkit.entity.Axolotl;
+import org.bukkit.entity.Cat;
+import org.bukkit.entity.Fox;
+import org.bukkit.entity.Frog;
+import org.bukkit.entity.Llama;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
+import org.bukkit.entity.Panda;
 import org.bukkit.entity.Parrot;
 import org.bukkit.entity.Phantom;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Rabbit;
+import org.bukkit.entity.Sheep;
 import org.bukkit.entity.Vex;
 import org.bukkit.entity.Wither;
 import org.bukkit.entity.Wolf;
@@ -49,10 +58,16 @@ public class PetManger {
     private static final String LAST_BATH_TIME_KEY = "lastBathTime";
     private static final String LAST_FEED_TIME_KEY = "lastFeedTime";
     private static final String LAST_PASSIVE_EXP_MINUTE_KEY = "lastPassiveExpMinute";
+    private static final String TUTORIAL_SHOWN_KEY = "tutorialShown";
+    private static final String LAST_BATH_REMINDER_TIME_KEY = "lastBathReminderTime";
+    private static final String LAST_FEED_REMINDER_TIME_KEY = "lastFeedReminderTime";
+    private static final String ENTITY_STATE_KEY = "entityState";
     private static final double TELEPORT_DISTANCE_SQUARED = 144.0D;
-    private static final double FLYING_HOVER_DISTANCE_SQUARED = 0.16D;
-    private static final double GROUND_HOVER_DISTANCE_SQUARED = 4.0D;
-    private static final double GROUND_FOLLOW_DISTANCE = 2.0D;
+    private static final double FOLLOW_STOP_DISTANCE_SQUARED = 4.0D;
+    private static final double FOLLOW_SLOT_REACHED_DISTANCE_SQUARED = 0.36D;
+    private static final double FOLLOW_SLOT_RADIUS = 1.75D;
+    private static final double FLYING_FOLLOW_HEIGHT = 3.0D;
+    private static final double GROUND_SLOT_TELEPORT_DISTANCE_SQUARED = 16.0D;
     private static final long BLIND_BOX_REVEAL_DURATION_TICKS = 40L;
     private static final LegacyComponentSerializer LEGACY_SERIALIZER = LegacyComponentSerializer.legacyAmpersand();
     private static boolean playerPetFallbackLogged;
@@ -184,13 +199,14 @@ public class PetManger {
                         pet.owner(),
                         pet.entity()
                 );
-                replacePet(player, updated);
                 if (updated.entity() != null && updated.entity().isValid()) {
-                    applyEntityState(player, updated, updated.entity());
+                    updated = applyEntityState(player, updated, updated.entity());
                 }
+                replacePet(player, updated);
                 executePetEvent(player, updated, "on-rename");
-                plugin.getPetUtil().savePetAsync(updated)
-                        .whenComplete((ignored, throwable) -> completePetFuture(future, updated, throwable));
+                Pet resultPet = updated;
+                plugin.getPetUtil().savePetAsync(resultPet)
+                        .whenComplete((ignored, throwable) -> completePetFuture(future, resultPet, throwable));
             } catch (Exception exception) {
                 future.completeExceptionally(exception);
             }
@@ -216,15 +232,16 @@ public class PetManger {
                         plugin.getPetProgressService().addExperience(pet, getBathRewardExp(pet)),
                         System.currentTimeMillis()
                 );
-                replacePet(player, cleaned);
                 if (cleaned.entity() != null && cleaned.entity().isValid()) {
-                    applyEntityState(player, cleaned, cleaned.entity());
+                    cleaned = applyEntityState(player, cleaned, cleaned.entity());
                     playBathEffect(cleaned.entity());
                     playLoveEffect(cleaned.entity(), 20L);
                 }
+                replacePet(player, cleaned);
                 executePetEvent(player, cleaned, "on-bath");
-                plugin.getPetUtil().savePetAsync(cleaned)
-                        .whenComplete((ignored, throwable) -> completePetFuture(future, cleaned, throwable));
+                Pet resultPet = cleaned;
+                plugin.getPetUtil().savePetAsync(resultPet)
+                        .whenComplete((ignored, throwable) -> completePetFuture(future, resultPet, throwable));
             } catch (Exception exception) {
                 future.completeExceptionally(exception);
             }
@@ -250,15 +267,16 @@ public class PetManger {
                         plugin.getPetProgressService().addExperience(pet, getFeedRewardExp(pet)),
                         System.currentTimeMillis()
                 );
-                replacePet(player, fed);
                 if (fed.entity() != null && fed.entity().isValid()) {
-                    applyEntityState(player, fed, fed.entity());
+                    fed = applyEntityState(player, fed, fed.entity());
                     playFeedEffect(fed.entity());
                     playLoveEffect(fed.entity(), 16L);
                 }
+                replacePet(player, fed);
                 executePetEvent(player, fed, "on-feed");
-                plugin.getPetUtil().savePetAsync(fed)
-                        .whenComplete((ignored, throwable) -> completePetFuture(future, fed, throwable));
+                Pet resultPet = fed;
+                plugin.getPetUtil().savePetAsync(resultPet)
+                        .whenComplete((ignored, throwable) -> completePetFuture(future, resultPet, throwable));
             } catch (Exception exception) {
                 future.completeExceptionally(exception);
             }
@@ -284,14 +302,15 @@ public class PetManger {
                 }
                 Pet updated = plugin.getPetProgressService().addExperience(pet, amount);
                 int previousLevel = pet.level();
-                replacePet(player, updated);
                 if (updated.entity() != null && updated.entity().isValid()) {
-                    applyEntityState(player, updated, updated.entity());
+                    updated = applyEntityState(player, updated, updated.entity());
                 }
+                replacePet(player, updated);
                 executePetEvent(player, updated, "on-add-exp");
                 executeLevelChangeEvents(player, pet, updated, previousLevel);
-                plugin.getPetUtil().savePetAsync(updated)
-                        .whenComplete((ignored, throwable) -> completePetFuture(future, updated, throwable));
+                Pet resultPet = updated;
+                plugin.getPetUtil().savePetAsync(resultPet)
+                        .whenComplete((ignored, throwable) -> completePetFuture(future, resultPet, throwable));
             } catch (Exception exception) {
                 future.completeExceptionally(exception);
             }
@@ -317,14 +336,15 @@ public class PetManger {
                 }
                 Pet updated = plugin.getPetProgressService().addLevels(pet, amount);
                 int previousLevel = pet.level();
-                replacePet(player, updated);
                 if (updated.entity() != null && updated.entity().isValid()) {
-                    applyEntityState(player, updated, updated.entity());
+                    updated = applyEntityState(player, updated, updated.entity());
                 }
+                replacePet(player, updated);
                 executePetEvent(player, updated, "on-add-level");
                 executeLevelChangeEvents(player, pet, updated, previousLevel);
-                plugin.getPetUtil().savePetAsync(updated)
-                        .whenComplete((ignored, throwable) -> completePetFuture(future, updated, throwable));
+                Pet resultPet = updated;
+                plugin.getPetUtil().savePetAsync(resultPet)
+                        .whenComplete((ignored, throwable) -> completePetFuture(future, resultPet, throwable));
             } catch (Exception exception) {
                 future.completeExceptionally(exception);
             }
@@ -341,7 +361,7 @@ public class PetManger {
             return false;
         }
         try {
-            return showPetInternal(player, pet, true) != null;
+            return showPetInternal(player, pet, true, true) != null;
         } catch (Exception exception) {
             handlePetSpawnFailure(player, pet, exception, true);
             return false;
@@ -362,7 +382,7 @@ public class PetManger {
                 }
                 Pet updated;
                 try {
-                    updated = pet == null ? null : showPetInternal(player, pet, false);
+                    updated = pet == null ? null : showPetInternal(player, pet, false, true);
                 } catch (Exception exception) {
                     if (pet != null) {
                         handlePetSpawnFailure(player, pet, exception, false);
@@ -470,7 +490,7 @@ public class PetManger {
                 }
                 Pet shown;
                 try {
-                    shown = showPetInternal(player, latestSelectedPet, false);
+                    shown = showPetInternal(player, latestSelectedPet, false, true);
                 } catch (Exception exception) {
                     handlePetSpawnFailure(player, latestSelectedPet, exception, false);
                     future.complete(false);
@@ -514,7 +534,7 @@ public class PetManger {
             if (pet.show()) {
                 Pet shownPet;
                 try {
-                    shownPet = showPetInternal(player, pet, false);
+                    shownPet = showPetInternal(player, pet, false, true);
                 } catch (Exception exception) {
                     handlePetSpawnFailure(player, pet, exception, false);
                     continue;
@@ -550,7 +570,7 @@ public class PetManger {
                         if (pet.show()) {
                             Pet shownPet;
                             try {
-                                shownPet = showPetInternal(player, pet, false);
+                                shownPet = showPetInternal(player, pet, false, true);
                             } catch (Exception exception) {
                                 handlePetSpawnFailure(player, pet, exception, false);
                                 continue;
@@ -745,13 +765,18 @@ public class PetManger {
                 Entity entity = pet.entity();
                 if (entity == null || !entity.isValid() || entity.isDead()) {
                     try {
-                        showPetInternal(player, pet, false);
+                        showPetInternal(player, pet, false, false);
                     } catch (Exception exception) {
                         handlePetSpawnFailure(player, pet, exception, false);
                     }
                     continue;
                 }
-                applyEntityState(player, pet, entity);
+                Pet updatedPet = applyEntityState(player, pet, entity);
+                if (updatedPet != pet) {
+                    replacePet(player, updatedPet);
+                    pet = updatedPet;
+                    entity = updatedPet.entity();
+                }
                 followOwner(player, pet, entity);
                 Pet currentPet = executeTickEvent(player, pet);
                 if (currentPet != null && currentPet != pet) {
@@ -767,14 +792,19 @@ public class PetManger {
                 if (needsFeed(pet)) {
                     spawnHungryParticles(entity);
                 }
+                Pet remindedPet = maybeSendCareReminder(player, pet);
+                if (remindedPet != pet) {
+                    replacePet(player, remindedPet);
+                }
             }
         }
     }
 
-    private void applyEntityState(Player player, Pet pet, Entity entity) {
+    private Pet applyEntityState(Player player, Pet pet, Entity entity) {
+        Pet updatedPet = pet;
         entity.setInvulnerable(true);
         entity.setPersistent(false);
-        applyEntityScale(pet, entity);
+        applyEntityScale(updatedPet, entity);
         if (entity instanceof TextDisplay textDisplay) {
             entity.customName(null);
             entity.setCustomNameVisible(false);
@@ -786,9 +816,9 @@ public class PetManger {
             textDisplay.setDefaultBackground(false);
             textDisplay.setInterpolationDelay(0);
             textDisplay.setInterpolationDuration(1);
-            return;
+            return updatedPet;
         }
-        entity.customName(LEGACY_SERIALIZER.deserialize(getDisplayName(pet, player)));
+        entity.customName(LEGACY_SERIALIZER.deserialize(getDisplayName(updatedPet, player)));
         entity.setCustomNameVisible(true);
         if (entity instanceof ArmorStand armorStand) {
             armorStand.setVisible(false);
@@ -821,6 +851,8 @@ public class PetManger {
             wither.setInvulnerableTicks(0);
             wither.setGlowing(false);
         }
+        applyPetDataToEntity(updatedPet, entity);
+        return captureEntityStateIfNecessary(updatedPet, entity);
     }
 
     private void applyEntityScale(Pet pet, Entity entity) {
@@ -856,6 +888,258 @@ public class PetManger {
         }
     }
 
+    private void applyPetDataToEntity(Pet pet, Entity entity) {
+        if (pet == null || entity == null) {
+            return;
+        }
+        applyConfiguredEntityData(entity, pet.data());
+        applyConfiguredEntityData(entity, getEntityStateData(pet));
+    }
+
+    private Pet captureEntityStateIfNecessary(Pet pet, Entity entity) {
+        PetConfig petConfig = plugin.getPetConfigManger().pets.get(pet.type());
+        if (petConfig == null || !petConfig.saveEntityData()) {
+            return pet;
+        }
+        Map<String, Object> entityState = extractEntityState(entity);
+        if (entityState.isEmpty()) {
+            return pet;
+        }
+        Map<String, Object> currentState = getEntityStateData(pet);
+        if (entityState.equals(currentState)) {
+            return pet;
+        }
+        return withDataValue(pet, ENTITY_STATE_KEY, entityState);
+    }
+
+    private Pet maybeSendCareReminder(Player player, Pet pet) {
+        if (player == null || pet == null || !player.isOnline()) {
+            return pet;
+        }
+        if (!plugin.getConfig().getBoolean("pet.tutorial.enabled", true)) {
+            return pet;
+        }
+        long now = System.currentTimeMillis();
+        long reminderIntervalMillis = Math.max(30L, plugin.getConfig().getLong("pet.tutorial.reminder-interval-seconds", 300L)) * 1000L;
+        boolean needsBath = needsBath(pet);
+        boolean needsFeed = needsFeed(pet);
+        boolean shouldRemindBath = needsBath && now - getLongDataValue(pet, LAST_BATH_REMINDER_TIME_KEY) >= reminderIntervalMillis;
+        boolean shouldRemindFeed = needsFeed && now - getLongDataValue(pet, LAST_FEED_REMINDER_TIME_KEY) >= reminderIntervalMillis;
+        if (!shouldRemindBath && !shouldRemindFeed) {
+            return pet;
+        }
+
+        if (shouldRemindBath && shouldRemindFeed) {
+            player.sendActionBar(org.bxwbb.qcpet.utils.TextComponentUtil.legacy(
+                    "&e宠物提醒：&r" + getDisplayName(pet, player) + " &e现在又脏又饿。"
+                            + " &7潜行右键宠物打开菜单，然后点洗澡和喂食即可"
+            ));
+        } else if (shouldRemindBath) {
+            player.sendActionBar(org.bxwbb.qcpet.utils.TextComponentUtil.legacy(
+                    "&e宠物提醒：&r" + getDisplayName(pet, player) + " &e该洗澡了。"
+                            + " &7潜行右键宠物打开菜单，然后点洗澡即可"
+            ));
+        } else {
+            player.sendActionBar(org.bxwbb.qcpet.utils.TextComponentUtil.legacy(
+                    "&e宠物提醒：&r" + getDisplayName(pet, player) + " &e肚子饿了。"
+                            + " &7潜行右键宠物打开菜单，然后点喂食即可"
+            ));
+        }
+
+        Pet updated = pet;
+        if (shouldRemindBath) {
+            updated = withDataValue(updated, LAST_BATH_REMINDER_TIME_KEY, now);
+        }
+        if (shouldRemindFeed) {
+            updated = withDataValue(updated, LAST_FEED_REMINDER_TIME_KEY, now);
+        }
+        return updated;
+    }
+
+    private Pet maybeShowSpawnTutorial(Player player, Pet pet) {
+        if (player == null || pet == null || !player.isOnline()) {
+            return pet;
+        }
+        if (!plugin.getConfig().getBoolean("pet.tutorial.enabled", true)) {
+            return pet;
+        }
+        if (getBooleanDataValue(pet, TUTORIAL_SHOWN_KEY)) {
+            return pet;
+        }
+        player.sendMessage(org.bxwbb.qcpet.utils.TextComponentUtil.legacy(
+                "&6宠物教程：&e右键宠物可骑乘，&e潜行右键可打开宠物菜单。"
+        ));
+        player.sendMessage(org.bxwbb.qcpet.utils.TextComponentUtil.legacy(
+                "&6宠物教程：&e菜单里可以查看状态、改名、洗澡和喂食。"
+        ));
+        player.sendMessage(org.bxwbb.qcpet.utils.TextComponentUtil.legacy(
+                "&6宠物教程：&e宠物冒烟说明该洗澡了，收到饥饿提醒时记得打开菜单喂食。"
+        ));
+        return withDataValue(pet, TUTORIAL_SHOWN_KEY, true);
+    }
+
+    private static void applyConfiguredEntityData(Entity entity, Map<String, Object> data) {
+        if (entity == null || data == null || data.isEmpty()) {
+            return;
+        }
+        if (entity instanceof Ageable ageable) {
+            Boolean isBaby = getBooleanValue(data.get("isBaby"));
+            if (isBaby != null) {
+                if (isBaby) {
+                    ageable.setBaby();
+                } else {
+                    ageable.setAdult();
+                }
+            }
+        }
+        if (entity instanceof Wolf wolf) {
+            Boolean angry = getBooleanValue(data.get("angry"));
+            if (angry != null) {
+                wolf.setAngry(angry);
+            }
+        }
+        if (entity instanceof Creeper creeper) {
+            Boolean powered = getBooleanValue(data.get("powered"));
+            if (powered != null) {
+                creeper.setPowered(powered);
+            }
+        }
+        if (entity instanceof Llama llama) {
+            Llama.Color color = getEnumValue(data.get("llamaColor"), Llama.Color.class);
+            if (color != null) {
+                llama.setColor(color);
+            }
+        }
+        if (entity instanceof Cat cat) {
+            Cat.Type catType = getEnumValue(data.get("catType"), Cat.Type.class);
+            if (catType != null) {
+                cat.setCatType(catType);
+            }
+        }
+        if (entity instanceof Rabbit rabbit) {
+            Rabbit.Type rabbitType = getEnumValue(data.get("rabbitType"), Rabbit.Type.class);
+            if (rabbitType != null) {
+                rabbit.setRabbitType(rabbitType);
+            }
+        }
+        if (entity instanceof Fox fox) {
+            Fox.Type foxType = getEnumValue(data.get("foxType"), Fox.Type.class);
+            if (foxType != null) {
+                fox.setFoxType(foxType);
+            }
+        }
+        if (entity instanceof Frog frog) {
+            Frog.Variant frogVariant = getEnumValue(data.get("frogVariant"), Frog.Variant.class);
+            if (frogVariant != null) {
+                frog.setVariant(frogVariant);
+            }
+        }
+        if (entity instanceof Panda panda) {
+            Panda.Gene mainGene = getEnumValue(data.get("pandaMainGene"), Panda.Gene.class);
+            if (mainGene != null) {
+                panda.setMainGene(mainGene);
+            }
+            Panda.Gene hiddenGene = getEnumValue(data.get("pandaHiddenGene"), Panda.Gene.class);
+            if (hiddenGene != null) {
+                panda.setHiddenGene(hiddenGene);
+            }
+        }
+        if (entity instanceof Parrot parrot) {
+            Parrot.Variant parrotVariant = getEnumValue(data.get("parrotVariant"), Parrot.Variant.class);
+            if (parrotVariant != null) {
+                parrot.setVariant(parrotVariant);
+            }
+        }
+        if (entity instanceof Sheep sheep) {
+            org.bukkit.DyeColor sheepColor = getEnumValue(data.get("sheepColor"), org.bukkit.DyeColor.class);
+            if (sheepColor != null) {
+                sheep.setColor(sheepColor);
+            }
+        }
+        if (entity instanceof Axolotl axolotl) {
+            Axolotl.Variant axolotlVariant = getEnumValue(data.get("axolotlVariant"), Axolotl.Variant.class);
+            if (axolotlVariant != null) {
+                axolotl.setVariant(axolotlVariant);
+            }
+        }
+    }
+
+    private static Map<String, Object> extractEntityState(Entity entity) {
+        Map<String, Object> entityState = new LinkedHashMap<>();
+        if (entity instanceof Llama llama) {
+            entityState.put("llamaColor", llama.getColor().name());
+        }
+        if (entity instanceof Cat cat) {
+            entityState.put("catType", cat.getCatType().name());
+        }
+        if (entity instanceof Rabbit rabbit) {
+            entityState.put("rabbitType", rabbit.getRabbitType().name());
+        }
+        if (entity instanceof Fox fox) {
+            entityState.put("foxType", fox.getFoxType().name());
+        }
+        if (entity instanceof Frog frog) {
+            entityState.put("frogVariant", frog.getVariant().name());
+        }
+        if (entity instanceof Panda panda) {
+            entityState.put("pandaMainGene", panda.getMainGene().name());
+            entityState.put("pandaHiddenGene", panda.getHiddenGene().name());
+        }
+        if (entity instanceof Parrot parrot) {
+            entityState.put("parrotVariant", parrot.getVariant().name());
+        }
+        if (entity instanceof Sheep sheep) {
+            entityState.put("sheepColor", sheep.getColor().name());
+        }
+        if (entity instanceof Axolotl axolotl) {
+            entityState.put("axolotlVariant", axolotl.getVariant().name());
+        }
+        return entityState;
+    }
+
+    private static Map<String, Object> getEntityStateData(Pet pet) {
+        Object entityState = pet.data() == null ? null : pet.data().get(ENTITY_STATE_KEY);
+        if (!(entityState instanceof Map<?, ?> stateMap)) {
+            return Map.of();
+        }
+        Map<String, Object> normalizedState = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : stateMap.entrySet()) {
+            normalizedState.put(String.valueOf(entry.getKey()), entry.getValue());
+        }
+        return normalizedState;
+    }
+
+    private static Boolean getBooleanValue(Object value) {
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        if (value instanceof String stringValue) {
+            if ("true".equalsIgnoreCase(stringValue)) {
+                return true;
+            }
+            if ("false".equalsIgnoreCase(stringValue)) {
+                return false;
+            }
+        }
+        return null;
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    private static <E extends Enum<?>> E getEnumValue(Object value, Class<?> enumClass) {
+        if (value == null) {
+            return null;
+        }
+        if (enumClass == null || !Enum.class.isAssignableFrom(enumClass)) {
+            return null;
+        }
+        try {
+            Class<? extends Enum> resolvedEnumClass = enumClass.asSubclass(Enum.class);
+            return (E) Enum.valueOf(resolvedEnumClass, String.valueOf(value).trim().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
+    }
+
     private void followOwner(Player player, Pet pet, Entity entity) {
         boolean flyingPet = isFlyingPet(pet, entity);
         if (!entity.getWorld().equals(player.getWorld())) {
@@ -863,9 +1147,10 @@ public class PetManger {
             return;
         }
 
-        Location targetLocation = flyingPet ? getFlyingFollowLocation(player) : getGroundFollowLocation(player, entity);
-        double distanceSquared = entity.getLocation().distanceSquared(targetLocation);
-        if (distanceSquared >= TELEPORT_DISTANCE_SQUARED) {
+        Location targetLocation = getFollowLocation(player, pet, flyingPet);
+        double ownerHorizontalDistanceSquared = getHorizontalDistanceSquared(entity.getLocation(), player.getLocation());
+        double targetHorizontalDistanceSquared = getHorizontalDistanceSquared(entity.getLocation(), targetLocation);
+        if (ownerHorizontalDistanceSquared >= TELEPORT_DISTANCE_SQUARED) {
             if (entity instanceof Player playerEntity && playerEntity != player) {
                 if (NmsPlayerPetController.isAvailable()) {
                     NmsPlayerPetController.teleport(playerEntity, targetLocation);
@@ -878,8 +1163,8 @@ public class PetManger {
             return;
         }
 
-        double hoverDistanceSquared = flyingPet ? FLYING_HOVER_DISTANCE_SQUARED : GROUND_HOVER_DISTANCE_SQUARED;
-        if (distanceSquared < hoverDistanceSquared) {
+        if (ownerHorizontalDistanceSquared <= FOLLOW_STOP_DISTANCE_SQUARED
+                && targetHorizontalDistanceSquared <= FOLLOW_SLOT_REACHED_DISTANCE_SQUARED) {
             if (entity instanceof Mob mob) {
                 NmsPetAiController.stop(mob);
             }
@@ -888,6 +1173,10 @@ public class PetManger {
         if (entity instanceof Mob mob) {
             if (flyingPet) {
                 NmsPetAiController.moveFlyingPet(mob, targetLocation);
+                return;
+            }
+            if (targetHorizontalDistanceSquared >= GROUND_SLOT_TELEPORT_DISTANCE_SQUARED) {
+                entity.teleport(targetLocation);
                 return;
             }
             NmsPetAiController.moveGroundPet(mob, targetLocation);
@@ -904,36 +1193,46 @@ public class PetManger {
         entity.teleport(targetLocation);
     }
 
-    private static Location getGroundFollowLocation(Player player, Entity entity) {
-        Location playerLocation = player.getLocation().clone();
-        if (entity == null) {
-            return playerLocation;
+    private Location getFollowLocation(Player player, Pet pet, boolean flyingPet) {
+        Location baseLocation = player.getLocation().clone();
+        List<Pet> visiblePets = getPets(player).stream()
+                .filter(Pet::show)
+                .sorted((left, right) -> Long.compare(left.id(), right.id()))
+                .toList();
+        int visibleCount = Math.max(1, visiblePets.size());
+        int slotIndex = 0;
+        for (int index = 0; index < visiblePets.size(); index++) {
+            if (visiblePets.get(index).id() == pet.id()) {
+                slotIndex = index;
+                break;
+            }
         }
-        org.bukkit.util.Vector offset = entity.getLocation().toVector().subtract(playerLocation.toVector());
-        offset.setY(0);
-        if (offset.lengthSquared() <= 0.0001D) {
-            return playerLocation;
+
+        double angle = (Math.PI * 2D * slotIndex) / visibleCount;
+        double xOffset = Math.cos(angle) * FOLLOW_SLOT_RADIUS;
+        double zOffset = Math.sin(angle) * FOLLOW_SLOT_RADIUS;
+        baseLocation.add(xOffset, 0D, zOffset);
+        if (flyingPet) {
+            baseLocation.setY(player.getLocation().getY() + FLYING_FOLLOW_HEIGHT);
         }
-        offset.normalize().multiply(GROUND_FOLLOW_DISTANCE);
-        return playerLocation.add(offset);
+        return baseLocation;
     }
 
-    private static Location getFlyingFollowLocation(Player player) {
-        Location base = player.getLocation().clone();
-        base.setY(player.getLocation().getY() + 3.0D);
-        return base;
+    private static double getHorizontalDistanceSquared(Location first, Location second) {
+        double deltaX = first.getX() - second.getX();
+        double deltaZ = first.getZ() - second.getZ();
+        return deltaX * deltaX + deltaZ * deltaZ;
     }
 
     private void spawnDirtyParticles(Entity entity) {
         Location location = entity.getLocation().clone().add(0, Math.max(0.5D, entity.getHeight() * 0.5D), 0);
-        entity.getWorld().spawnParticle(Particle.SMOKE, location, 3, 0.25D, 0.25D, 0.25D, 0.01D);
-        entity.getWorld().spawnParticle(Particle.CLOUD, location, 1, 0.12D, 0.12D, 0.12D, 0D);
+        entity.getWorld().spawnParticle(Particle.SMOKE, location, 1, 0.18D, 0.18D, 0.18D, 0.01D);
     }
 
     private void spawnHungryParticles(Entity entity) {
         Location location = entity.getLocation().clone().add(0, Math.max(0.7D, entity.getHeight() * 0.7D), 0);
-        entity.getWorld().spawnParticle(Particle.ANGRY_VILLAGER, location, 1, 0.12D, 0.12D, 0.12D, 0D);
-        entity.getWorld().spawnParticle(Particle.SMOKE, location, 2, 0.2D, 0.2D, 0.2D, 0.01D);
+        entity.getWorld().spawnParticle(Particle.ANGRY_VILLAGER, location, 1, 0.08D, 0.08D, 0.08D, 0D);
+        entity.getWorld().spawnParticle(Particle.SMOKE, location, 1, 0.15D, 0.15D, 0.15D, 0.01D);
     }
 
     private void playBathEffect(Entity entity) {
@@ -1002,6 +1301,17 @@ public class PetManger {
         return 0L;
     }
 
+    private static boolean getBooleanDataValue(Pet pet, String key) {
+        Object value = pet.data() == null ? null : pet.data().get(key);
+        if (value instanceof Boolean booleanValue) {
+            return booleanValue;
+        }
+        if (value instanceof String stringValue) {
+            return Boolean.parseBoolean(stringValue);
+        }
+        return false;
+    }
+
     private static Pet markBathTime(Pet pet, long timestamp) {
         return withDataValue(pet, LAST_BATH_TIME_KEY, timestamp);
     }
@@ -1015,6 +1325,10 @@ public class PetManger {
     }
 
     private static Pet withDataValue(Pet pet, String key, long value) {
+        return withDataValue(pet, key, Long.valueOf(value));
+    }
+
+    private static Pet withDataValue(Pet pet, String key, Object value) {
         Map<String, Object> data = pet.data() == null ? new LinkedHashMap<>() : new LinkedHashMap<>(pet.data());
         data.put(key, value);
         return new Pet(
@@ -1072,7 +1386,7 @@ public class PetManger {
         return prefix + baseName + suffix;
     }
 
-    private Pet showPetInternal(Player player, Pet pet, boolean persist) {
+    private Pet showPetInternal(Player player, Pet pet, boolean persist, boolean fireSpawnEvent) {
         PetConfig petConfig = plugin.getPetConfigManger().pets.get(pet.type());
         if (petConfig == null) {
             throw new IllegalStateException("Missing pet config for type " + pet.type());
@@ -1086,12 +1400,19 @@ public class PetManger {
         } else {
             entity = player.getWorld().spawnEntity(player.getLocation(), petConfig.entityType());
         }
-        applyEntityState(player, pet, entity);
-        Pet updated = copyPet(pet, true, entity);
+        Pet appliedPet = applyEntityState(player, pet, entity);
+        Pet updated = copyPet(appliedPet, true, entity);
+        if (fireSpawnEvent) {
+            updated = maybeShowSpawnTutorial(player, updated);
+        }
         replacePet(player, updated);
-        executePetEvent(player, updated, "on-spawn");
+        if (fireSpawnEvent) {
+            executePetEvent(player, updated, "on-spawn");
+        }
         if (persist) {
             plugin.getPetUtil().savePet(updated);
+        } else if (!appliedPet.data().equals(pet.data())) {
+            plugin.getPetUtil().savePetAsync(updated);
         }
         return updated;
     }
@@ -1182,7 +1503,7 @@ public class PetManger {
         }
         Entity revealEntity = oldPet.entity();
         if (revealEntity == null || !revealEntity.isValid() || revealEntity.isDead()) {
-            showPetInternal(player, newPet, false);
+            showPetInternal(player, newPet, false, false);
             return;
         }
 
@@ -1212,7 +1533,7 @@ public class PetManger {
                 removeEntity(oldPet);
                 return;
             }
-            Pet shownPet = showPetInternal(player, currentPet, false);
+            Pet shownPet = showPetInternal(player, currentPet, false, false);
             if (shownPet != null && shownPet.entity() != null) {
                 playLoveEffect(shownPet.entity(), 12L);
             }
@@ -1247,10 +1568,10 @@ public class PetManger {
 
         Pet expUpdated = plugin.getPetProgressService().addExperience(pet, petConfig.expPerMinute());
         Pet updated = markPassiveExpMinute(expUpdated, currentMinute);
-        replacePet(player, updated);
         if (updated.entity() != null && updated.entity().isValid()) {
-            applyEntityState(player, updated, updated.entity());
+            updated = applyEntityState(player, updated, updated.entity());
         }
+        replacePet(player, updated);
         executePetEvent(player, updated, "on-passive-exp", Map.of(
                 "%qcpet_passive_exp%", String.valueOf(petConfig.expPerMinute())
         ));

@@ -2,6 +2,7 @@ default:
   type: BEE
   displayName: "%qcpet_key%"
   times: 1
+  saveEntityData: false
   scaleRequirement: "1 + (%2% * 0.03)"
   expPerMinute: 15
   bathRewardExp: 25
@@ -301,6 +302,7 @@ pets:
 
   llama:
     type: LLAMA
+    saveEntityData: true
     displayName: "&6羊驼伙伴"
     times: 1.2
     scaleRequirement: "0.95 + (%2% * 0.02)"

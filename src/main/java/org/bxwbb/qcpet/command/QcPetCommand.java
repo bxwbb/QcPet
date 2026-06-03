@@ -173,7 +173,7 @@ public class QcPetCommand implements TabExecutor {
         if (player == null) {
             return true;
         }
-        plugin.getGuiManger().openPetSelectMenu(player);
+        plugin.getGuiManager().openPetSelectMenu(player);
         return true;
     }
 

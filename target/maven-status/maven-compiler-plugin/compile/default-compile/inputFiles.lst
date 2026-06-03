@@ -1,8 +1,13 @@
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\command\QcPetCommand.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\event\LoadSaveEvent.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\event\PetProtectionListener.java
+E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\gui\GuiManager.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\gui\GuiManger.java
+E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\gui\PetMenuGui.java
+E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\gui\PetMenuGuiBedrock.java
+E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\gui\PetMenuGuiJava.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\gui\SelectPetGui.java
+E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\gui\SelectPetGuiBedrock.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\gui\SelectPetGuiJava.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\math\ArgumentNode.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\math\BinaryNode.java

@@ -5,7 +5,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bxwbb.qcpet.command.QcPetCommand;
 import org.bxwbb.qcpet.event.LoadSaveEvent;
 import org.bxwbb.qcpet.event.PetProtectionListener;
-import org.bxwbb.qcpet.gui.GuiManger;
+import org.bxwbb.qcpet.gui.GuiManager;
 import org.bxwbb.qcpet.pet.PetConfigManger;
 import org.bxwbb.qcpet.pet.PetManger;
 import org.bxwbb.qcpet.pet.PetProgressService;
@@ -25,7 +25,7 @@ public class QcPet extends JavaPlugin {
     private MySqlSaveUtil mySqlSaveUtil;
     private PetUtil petUtil;
     private PetManger petManger;
-    private GuiManger guiManger;
+    private GuiManager guiManager;
     private PetConfigManger petConfigManger;
     private PetProgressService petProgressService;
 
@@ -51,7 +51,7 @@ public class QcPet extends JavaPlugin {
         new LoadSaveEvent(this);
         new PetProtectionListener(this);
         new QcPetCommand(this);
-        guiManger = new GuiManger(this);
+        guiManager = new GuiManager(this);
         if (getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             new QcPetPlaceholderExpansion(this).register();
             getLogger().info("PAPI 变量注册成功！");
@@ -149,8 +149,13 @@ public class QcPet extends JavaPlugin {
         return petManger;
     }
 
-    public GuiManger getGuiManger() {
-        return guiManger;
+    public GuiManager getGuiManager() {
+        return guiManager;
+    }
+
+    @Deprecated
+    public GuiManager getGuiManger() {
+        return guiManager;
     }
 
     public PetConfigManger getPetConfigManger() {

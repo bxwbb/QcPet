@@ -1,16 +1,19 @@
-config-version: 1
+config-version: 2
 
 save:
   sql:
-    url: jdbc:mysql://120.220.76.204:3306/minecraft?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
-    user: minecraft
-    password: minecraft
+    url: your url
+    user: user
+    password: password
     table: qcpet
 
 player:
   max-display-count: 3
 
 pet:
+  tutorial:
+    enabled: true
+    reminder-interval-seconds: 300
   rename:
     max-length: 32
     allow-color-codes: true

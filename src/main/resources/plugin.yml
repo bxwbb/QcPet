@@ -3,8 +3,8 @@ version: '${project.version}'
 main: org.bxwbb.qcpet.QcPet
 api-version: '1.21'
 author: BXWBB
-description: A configurable Paper pet plugin with database storage.
-website: https://github.com/BXWBB/QcPet
+description: 一个高度可配置的跨服宠物插件
+website: https://github.com/bxwbb/QcPet
 
 commands:
   qcpet:

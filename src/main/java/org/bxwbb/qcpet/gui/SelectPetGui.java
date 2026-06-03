@@ -1,16 +1,16 @@
 package org.bxwbb.qcpet.gui;
 
 import org.bukkit.entity.Player;
-
-import java.util.HashMap;
-import java.util.Map;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.inventory.InventoryHolder;
 
 public interface SelectPetGui {
 
-    Map<Player, Integer> page = new HashMap<>();
+    boolean isSelectMenu(InventoryHolder holder);
 
     void open(Player player);
 
-    void update(Player player, int page);
+    void open(Player player, int page);
 
+    void handleInventoryClick(Player player, InventoryClickEvent event);
 }
