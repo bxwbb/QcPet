@@ -5,6 +5,9 @@ api-version: '1.21'
 author: BXWBB
 description: 一个高度可配置的跨服宠物插件
 website: https://github.com/bxwbb/QcPet
+softdepend:
+  - PlaceholderAPI
+  - QcLevel
 
 commands:
   qcpet:

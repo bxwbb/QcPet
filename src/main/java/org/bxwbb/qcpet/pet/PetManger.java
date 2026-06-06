@@ -1,6 +1,5 @@
 package org.bxwbb.qcpet.pet;
 
-import cn.qcrealm.qclevel.api.QcLevelAPI;
 import me.clip.placeholderapi.PlaceholderAPI;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.attribute.Attribute;
@@ -51,6 +50,9 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
+import java.lang.reflect.InvocationHandler;
+import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -82,13 +84,68 @@ public class PetManger {
     public PetManger(QcPet plugin) {
         this.plugin = plugin;
         this.followTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tickVisiblePets, 1L, 1L);
-        QcLevelAPI.registerExpBoostProvider("qc-pet", player -> {
-            double ret = 1;
-            for (Pet pet : pets.get(player.getUniqueId())) {
-                ret *= pet.times();
-            }
-            return (ret - 1) > 0 ? ret - 1 : 0;
-        });
+        registerQcLevelExpBoostProvider();
+    }
+
+    private void registerQcLevelExpBoostProvider() {
+        if (!plugin.getServer().getPluginManager().isPluginEnabled("QcLevel")) {
+            return;
+        }
+
+        try {
+            ClassLoader classLoader = plugin.getClass().getClassLoader();
+            Class<?> apiClass = Class.forName("cn.qcrealm.qclevel.api.QcLevelAPI", true, classLoader);
+            Class<?> providerClass = Class.forName("cn.qcrealm.qclevel.api.ExpBoostProvider", true, classLoader);
+            Method registerMethod = apiClass.getMethod("registerExpBoostProvider", String.class, providerClass);
+
+            InvocationHandler handler = (proxy, method, args) -> {
+                if ("getExpBoost".equals(method.getName()) && args != null && args.length == 1 && args[0] instanceof Player player) {
+                    double ret = 1D;
+                    for (Pet pet : pets.getOrDefault(player.getUniqueId(), List.of())) {
+                        ret *= pet.times();
+                    }
+                    return (ret - 1D) > 0D ? ret - 1D : 0D;
+                }
+                return defaultValue(method.getReturnType());
+            };
+            Object provider = Proxy.newProxyInstance(classLoader, new Class<?>[]{providerClass}, handler);
+            registerMethod.invoke(null, "qc-pet", provider);
+            plugin.getLogger().info("已注册 QcLevel 经验加成提供器。");
+        } catch (ReflectiveOperationException | LinkageError exception) {
+            plugin.getLogger().warning("检测到 QcLevel，但其 API 与当前版本不兼容，已跳过经验加成集成。");
+            plugin.getLogger().fine("QcLevel 集成失败: " + exception.getMessage());
+        }
+    }
+
+    private static Object defaultValue(Class<?> returnType) {
+        if (!returnType.isPrimitive()) {
+            return null;
+        }
+        if (returnType == Boolean.TYPE) {
+            return false;
+        }
+        if (returnType == Character.TYPE) {
+            return '\0';
+        }
+        if (returnType == Byte.TYPE) {
+            return (byte) 0;
+        }
+        if (returnType == Short.TYPE) {
+            return (short) 0;
+        }
+        if (returnType == Integer.TYPE) {
+            return 0;
+        }
+        if (returnType == Long.TYPE) {
+            return 0L;
+        }
+        if (returnType == Float.TYPE) {
+            return 0F;
+        }
+        if (returnType == Double.TYPE) {
+            return 0D;
+        }
+        return null;
     }
 
     public Pet givePet(Player player, PetConfig petConfig) {

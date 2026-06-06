@@ -1,10 +1,13 @@
 name: QcPet
-version: '1.1.2'
+version: '1.1.4'
 main: org.bxwbb.qcpet.QcPet
 api-version: '1.21'
 author: BXWBB
 description: 一个高度可配置的跨服宠物插件
 website: https://github.com/bxwbb/QcPet
+softdepend:
+  - PlaceholderAPI
+  - QcLevel
 
 commands:
   qcpet:
