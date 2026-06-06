@@ -11,6 +11,7 @@ import java.util.Map;
 public record PetConfig(
         String name,
         String baseName,
+        String modelId,
         String type,
         double times,
         String scaleRequirement,

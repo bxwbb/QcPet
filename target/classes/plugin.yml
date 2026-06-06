@@ -1,5 +1,5 @@
 name: QcPet
-version: '1.1.1'
+version: '1.1.2'
 main: org.bxwbb.qcpet.QcPet
 api-version: '1.21'
 author: BXWBB
@@ -9,7 +9,7 @@ website: https://github.com/bxwbb/QcPet
 commands:
   qcpet:
     description: QcPet main command
-    usage: /<command> [help|list|select|show|hide|bath|feed|info|reload|give [player] <pet>|remove [player] <id>|addexp [player] <id> <amount>|addlevel [player] <id> <amount>|storage]
+    usage: /<command> [help|list|select|show [player] <id|*>|hide [player] <id|*>|bath|feed|info|reload|give [player] <pet>|remove [player] <id>|addexp [player] <id> <amount>|addlevel [player] <id> <amount>|storage]
     aliases:
       - pet
       - pets
@@ -49,6 +49,8 @@ permissions:
       qcpet.command.addexp: true
       qcpet.command.addlevel: true
       qcpet.command.storage: true
+      qcpet.command.show.other: true
+      qcpet.command.hide.other: true
       qcpet.bypass.limit: true
       qcpet.bypass.world: true
 
@@ -69,12 +71,20 @@ permissions:
     default: true
 
   qcpet.command.show:
-    description: 允许显示当前启用的宠物。
+    description: 允许显示自己的宠物。
     default: true
 
+  qcpet.command.show.other:
+    description: 允许显示其他玩家的宠物。
+    default: op
+
   qcpet.command.hide:
-    description: 允许隐藏当前启用的宠物。
+    description: 允许隐藏自己的宠物。
     default: true
+
+  qcpet.command.hide.other:
+    description: 允许隐藏其他玩家的宠物。
+    default: op
 
   qcpet.command.bath:
     description: 允许给宠物洗澡。

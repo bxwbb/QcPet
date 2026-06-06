@@ -33,6 +33,7 @@ public class PetMenuGuiJava implements PetMenuGui {
     private static final int HIDE_SLOT = 33;
     private static final int BATH_SLOT = 34;
     private static final int FEED_SLOT = 35;
+    private static final int MUTE_SLOT = 41;
     private static final int CLOSE_SLOT = 42;
 
     private final QcPet plugin;
@@ -70,6 +71,7 @@ public class PetMenuGuiJava implements PetMenuGui {
         ));
         inventory.setItem(BATH_SLOT, createBathItem(pet));
         inventory.setItem(FEED_SLOT, createFeedItem(pet));
+        inventory.setItem(MUTE_SLOT, createMuteItem(pet));
         inventory.setItem(CLOSE_SLOT, createActionItem(
                 Material.BARRIER,
                 "关闭界面",
@@ -108,7 +110,7 @@ public class PetMenuGuiJava implements PetMenuGui {
         if (slot == RENAME_SLOT) {
             renameSessions.put(player.getUniqueId(), new RenameSession(holder.petId()));
             player.closeInventory();
-            send(player, "&e请在聊天栏输入新的宠物名称。输入 cancel 取消。");
+            send(player, "&e请在聊天栏输入新的宠物名称，输入 cancel 取消。");
             if (plugin.getConfig().getBoolean("pet.rename.allow-color-codes", true)) {
                 send(player, "&7支持使用 & 颜色代码。");
             }
@@ -165,6 +167,26 @@ public class PetMenuGuiJava implements PetMenuGui {
                         }
                         send(player, "&a宠物已经吃饱了，获得 " + plugin.getPetManger().getFeedRewardExp(fedPet) + " 经验。");
                         openPetMenu(player, fedPet);
+                    });
+            return;
+        }
+
+        if (slot == MUTE_SLOT) {
+            plugin.getPetManger().togglePetMutedAsync(player, holder.petId())
+                    .whenComplete((updatedPet, throwable) -> {
+                        if (throwable != null) {
+                            send(player, "&c切换静音失败: " + throwable.getMessage());
+                            return;
+                        }
+                        if (updatedPet == null) {
+                            send(player, "&c未找到对应宠物。");
+                            player.closeInventory();
+                            return;
+                        }
+                        send(player, plugin.getPetManger().isPetMuted(updatedPet)
+                                ? "&a宠物已设为静音。"
+                                : "&a宠物已恢复发声。");
+                        openPetMenu(player, updatedPet);
                     });
             return;
         }
@@ -238,6 +260,7 @@ public class PetMenuGuiJava implements PetMenuGui {
 
         int requiredExp = plugin.getPetProgressService().getRequiredExp(pet);
         String progressBar = plugin.getPetProgressService().buildProgressBar(pet, 18);
+        boolean muted = plugin.getPetManger().isPetMuted(pet);
         List<Component> lore = new ArrayList<>();
         if (blindBox) {
             lore.add(TextComponentUtil.plain("等级: ???", NamedTextColor.GRAY));
@@ -250,6 +273,7 @@ public class PetMenuGuiJava implements PetMenuGui {
         }
         lore.add(TextComponentUtil.plain("宠物ID: " + pet.id(), NamedTextColor.DARK_GRAY));
         lore.add(TextComponentUtil.plain("状态: " + (pet.show() ? "已出战" : "未出战"), pet.show() ? NamedTextColor.GREEN : NamedTextColor.GRAY));
+        lore.add(TextComponentUtil.plain("静音: " + (muted ? "是" : "否"), muted ? NamedTextColor.YELLOW : NamedTextColor.GRAY));
 
         itemMeta.displayName(TextComponentUtil.legacy(plugin.getPetManger().getDisplayName(pet, player)));
         itemMeta.lore(lore);
@@ -304,6 +328,18 @@ public class PetMenuGuiJava implements PetMenuGui {
                 needsFeed ? Material.COOKED_BEEF : Material.BREAD,
                 needsFeed ? "给宠物喂食" : "宠物不饿",
                 lore
+        );
+    }
+
+    private ItemStack createMuteItem(Pet pet) {
+        boolean muted = plugin.getPetManger().isPetMuted(pet);
+        return createActionItem(
+                muted ? Material.BELL : Material.NOTE_BLOCK,
+                muted ? "取消静音" : "静音宠物",
+                List.of(
+                        "当前状态: " + (muted ? "已静音" : "正常发声"),
+                        muted ? "点击后恢复宠物发声" : "点击后让宠物静音"
+                )
         );
     }
 

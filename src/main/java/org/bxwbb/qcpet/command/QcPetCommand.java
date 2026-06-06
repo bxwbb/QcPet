@@ -17,8 +17,10 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 
 public class QcPetCommand implements TabExecutor {
 
@@ -38,7 +40,7 @@ public class QcPetCommand implements TabExecutor {
             "addlevel",
             "storage"
     );
-    private static final List<String> TARGET_PLAYER_COMMANDS = List.of("give", "remove", "addexp", "addlevel");
+    private static final List<String> TARGET_PLAYER_COMMANDS = List.of("give", "remove", "addexp", "addlevel", "show", "hide");
 
     private final QcPet plugin;
 
@@ -99,7 +101,7 @@ public class QcPetCommand implements TabExecutor {
                 return filterByPrefix(getOnlinePlayerNames(), args[1]);
             }
             if (isPetIdCommand(subCommand) && sender instanceof Player player) {
-                return filterByPrefix(getPetIds(player), args[1]);
+                return filterByPrefix(getPetIdSelectors(player), args[1]);
             }
             if (isPetTemplateCommand(subCommand)) {
                 return filterByPrefix(new ArrayList<>(plugin.getPetConfigManger().pets.keySet()), args[1]);
@@ -110,11 +112,12 @@ public class QcPetCommand implements TabExecutor {
             if (subCommand.equals("give")) {
                 return filterByPrefix(new ArrayList<>(plugin.getPetConfigManger().pets.keySet()), args[2]);
             }
-            if ((subCommand.equals("remove") || subCommand.equals("addexp") || subCommand.equals("addlevel"))
+            if ((subCommand.equals("remove") || subCommand.equals("addexp") || subCommand.equals("addlevel")
+                    || subCommand.equals("show") || subCommand.equals("hide"))
                     && sender.hasPermission("qcpet.command." + subCommand)) {
                 Player target = Bukkit.getPlayerExact(args[1]);
                 if (target != null) {
-                    return filterByPrefix(getPetIds(target), args[2]);
+                    return filterByPrefix(getPetIdSelectors(target), args[2]);
                 }
             }
         }
@@ -129,15 +132,15 @@ public class QcPetCommand implements TabExecutor {
         send(sender, "&6QcPet 命令:");
         send(sender, "&e/qcpet list &7- 查看自己的宠物列表");
         send(sender, "&e/qcpet select &7- 打开宠物选择界面");
-        send(sender, "&e/qcpet show <宠物ID> &7- 显示自己的宠物");
-        send(sender, "&e/qcpet hide <宠物ID> &7- 隐藏自己的宠物");
+        send(sender, "&e/qcpet show [玩家] <宠物ID|*> &7- 显示宠物");
+        send(sender, "&e/qcpet hide [玩家] <宠物ID|*> &7- 隐藏宠物");
         send(sender, "&e/qcpet bath <宠物ID> &7- 给自己的宠物洗澡");
         send(sender, "&e/qcpet feed <宠物ID> &7- 给自己的宠物喂食");
         send(sender, "&e/qcpet info <宠物ID> &7- 查看宠物信息");
         send(sender, "&e/qcpet give [玩家] <模板名> &7- 发放宠物");
         send(sender, "&e/qcpet remove [玩家] <宠物ID> &7- 删除宠物");
-        send(sender, "&e/qcpet addexp [玩家] <宠物ID> <数值> &7- 增加宠物经验");
-        send(sender, "&e/qcpet addlevel [玩家] <宠物ID> <数值> &7- 增加宠物等级");
+        send(sender, "&e/qcpet addexp [玩家] <宠物ID> <数量> &7- 增加宠物经验");
+        send(sender, "&e/qcpet addlevel [玩家] <宠物ID> <数量> &7- 增加宠物等级");
         send(sender, "&e/qcpet reload &7- 重载配置");
         send(sender, "&e/qcpet storage &7- 查看存储状态");
         return true;
@@ -181,25 +184,27 @@ public class QcPetCommand implements TabExecutor {
         if (!hasPermission(sender, "qcpet.command.show")) {
             return true;
         }
-        Player player = requirePlayer(sender);
-        if (player == null) {
+        TargetPetSelection selection = resolveTargetPetSelection(sender, args, "show");
+        if (selection == null) {
             return true;
         }
-        Long petId = requirePetId(sender, args, 0);
-        if (petId == null) {
+        if (selection.allPets()) {
+            handleToggleAllPets(sender, selection.target(), true);
             return true;
         }
-        plugin.getPetManger().showPetAsync(player, petId)
+
+        long petId = selection.petId();
+        plugin.getPetManger().showPetAsync(selection.target(), petId)
                 .whenComplete((shown, throwable) -> {
                     if (throwable != null) {
-                        player.sendMessage(error("命令执行失败: " + throwable.getMessage()));
+                        sender.sendMessage(error("命令执行失败: " + throwable.getMessage()));
                         return;
                     }
                     if (!shown) {
-                        player.sendMessage(error("未找到可显示的宠物，ID: " + petId));
+                        sender.sendMessage(error("未找到可显示的宠物，ID: " + petId));
                         return;
                     }
-                    player.sendMessage(success("宠物显示成功，ID: " + petId));
+                    sender.sendMessage(success("已显示 " + selection.target().getName() + " 的宠物，ID: " + petId));
                 });
         return true;
     }
@@ -208,25 +213,27 @@ public class QcPetCommand implements TabExecutor {
         if (!hasPermission(sender, "qcpet.command.hide")) {
             return true;
         }
-        Player player = requirePlayer(sender);
-        if (player == null) {
+        TargetPetSelection selection = resolveTargetPetSelection(sender, args, "hide");
+        if (selection == null) {
             return true;
         }
-        Long petId = requirePetId(sender, args, 0);
-        if (petId == null) {
+        if (selection.allPets()) {
+            handleToggleAllPets(sender, selection.target(), false);
             return true;
         }
-        plugin.getPetManger().hidePetAsync(player, petId)
+
+        long petId = selection.petId();
+        plugin.getPetManger().hidePetAsync(selection.target(), petId)
                 .whenComplete((hidden, throwable) -> {
                     if (throwable != null) {
-                        player.sendMessage(error("命令执行失败: " + throwable.getMessage()));
+                        sender.sendMessage(error("命令执行失败: " + throwable.getMessage()));
                         return;
                     }
                     if (!hidden) {
-                        player.sendMessage(error("未找到可隐藏的宠物，ID: " + petId));
+                        sender.sendMessage(error("未找到可隐藏的宠物，ID: " + petId));
                         return;
                     }
-                    player.sendMessage(success("宠物隐藏成功，ID: " + petId));
+                    sender.sendMessage(success("已隐藏 " + selection.target().getName() + " 的宠物，ID: " + petId));
                 });
         return true;
     }
@@ -559,20 +566,89 @@ public class QcPetCommand implements TabExecutor {
 
     private Integer requireAmount(CommandSender sender, String[] args, int index, String name) {
         if (args.length <= index) {
-            sender.sendMessage(error("请提供" + name + "数值。"));
+            sender.sendMessage(error("请提供" + name + "数量。"));
             return null;
         }
         try {
             int amount = Integer.parseInt(args[index]);
             if (amount <= 0) {
-                sender.sendMessage(error(name + "数值必须大于 0。"));
+                sender.sendMessage(error(name + "数量必须大于 0。"));
                 return null;
             }
             return amount;
         } catch (NumberFormatException exception) {
-            sender.sendMessage(error(name + "数值必须是数字。"));
+            sender.sendMessage(error(name + "数量必须是数字。"));
             return null;
         }
+    }
+
+    private TargetPetSelection resolveTargetPetSelection(CommandSender sender, String[] args, String action) {
+        Player target;
+        String petSelector;
+        if (args.length >= 2) {
+            if (!hasPermission(sender, "qcpet.command." + action + ".other")) {
+                return null;
+            }
+            target = requireOnlinePlayer(sender, args[0]);
+            petSelector = args[1];
+        } else {
+            target = requirePlayer(sender);
+            petSelector = args.length == 0 ? null : args[0];
+        }
+        if (target == null) {
+            return null;
+        }
+        if (petSelector == null || petSelector.isBlank()) {
+            sender.sendMessage(error("请提供宠物 ID 或 *。"));
+            return null;
+        }
+        if ("*".equals(petSelector)) {
+            return new TargetPetSelection(target, 0L, true);
+        }
+        Long petId = requirePetId(sender, new String[]{petSelector}, 0);
+        if (petId == null) {
+            return null;
+        }
+        return new TargetPetSelection(target, petId, false);
+    }
+
+    private void handleToggleAllPets(CommandSender sender, Player target, boolean show) {
+        List<Pet> candidates = plugin.getPetManger().getPets(target).stream()
+                .filter(pet -> show ? !pet.show() : pet.show())
+                .sorted(Comparator.comparingLong(Pet::id))
+                .toList();
+        if (candidates.isEmpty()) {
+            sender.sendMessage(error(show
+                    ? target.getName() + " 当前没有可显示的宠物。"
+                    : target.getName() + " 当前没有已出战的宠物。"));
+            return;
+        }
+
+        CompletableFuture<Integer> future = CompletableFuture.completedFuture(0);
+        for (Pet pet : candidates) {
+            future = future.thenCompose(count -> {
+                CompletableFuture<Boolean> actionFuture = show
+                        ? plugin.getPetManger().showPetAsync(target, pet.id())
+                        : plugin.getPetManger().hidePetAsync(target, pet.id());
+                return actionFuture.handle((changed, throwable) -> count + (throwable == null && Boolean.TRUE.equals(changed) ? 1 : 0));
+            });
+        }
+
+        int total = candidates.size();
+        future.whenComplete((changedCount, throwable) -> {
+            if (throwable != null) {
+                sender.sendMessage(error("命令执行失败: " + throwable.getMessage()));
+                return;
+            }
+            if (changedCount == null || changedCount <= 0) {
+                sender.sendMessage(error(show
+                        ? "未能显示 " + target.getName() + " 的任何宠物。"
+                        : "未能隐藏 " + target.getName() + " 的任何宠物。"));
+                return;
+            }
+            sender.sendMessage(success((show ? "已显示 " : "已隐藏 ")
+                    + target.getName() + " 的宠物，共 " + changedCount + "/" + total + " 只。"));
+        });
     }
 
     private List<String> getAllowedSubCommands(CommandSender sender) {
@@ -605,6 +681,13 @@ public class QcPetCommand implements TabExecutor {
         return petIds;
     }
 
+    private List<String> getPetIdSelectors(Player player) {
+        List<String> selectors = new ArrayList<>();
+        selectors.add("*");
+        selectors.addAll(getPetIds(player));
+        return selectors;
+    }
+
     private List<String> getOnlinePlayerNames() {
         return Bukkit.getOnlinePlayers().stream()
                 .map(Player::getName)
@@ -629,5 +712,8 @@ public class QcPetCommand implements TabExecutor {
 
     private static void send(CommandSender sender, String message) {
         sender.sendMessage(TextComponentUtil.legacy(message));
+    }
+
+    private record TargetPetSelection(Player target, long petId, boolean allPets) {
     }
 }

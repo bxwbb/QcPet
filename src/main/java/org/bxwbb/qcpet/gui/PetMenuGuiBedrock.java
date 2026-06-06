@@ -20,6 +20,7 @@ public class PetMenuGuiBedrock implements PetMenuGui {
     private static final String IMAGE_PATH_HIDE = "textures/ui/cancel";
     private static final String IMAGE_PATH_BATH = "textures/items/bucket_water";
     private static final String IMAGE_PATH_FEED = "textures/items/beef_cooked";
+    private static final String IMAGE_PATH_MUTE = "textures/ui/sound_glyph_color_2x";
     private static final String IMAGE_PATH_REFRESH = "textures/ui/icon_import";
     private static final String IMAGE_PATH_BACK = "textures/ui/arrow_left";
     private static final String IMAGE_PATH_CLOSE = "textures/ui/realms_red_x";
@@ -53,16 +54,18 @@ public class PetMenuGuiBedrock implements PetMenuGui {
 
         boolean needsBath = plugin.getPetManger().needsBath(currentPet);
         boolean needsFeed = plugin.getPetManger().needsFeed(currentPet);
+        boolean muted = plugin.getPetManger().isPetMuted(currentPet);
 
         SimpleForm.Builder builder = SimpleForm.builder()
                 .title("§6宠物界面")
-                .content(buildPetContent(player, currentPet, needsBath, needsFeed));
+                .content(buildPetContent(player, currentPet, needsBath, needsFeed, muted));
 
         builder.button("§e查看宠物信息", FormImage.Type.PATH, IMAGE_PATH_PET);
         builder.button("§b重命名宠物", FormImage.Type.PATH, IMAGE_PATH_RENAME);
         builder.button("§c隐藏宠物", FormImage.Type.PATH, IMAGE_PATH_HIDE);
         builder.button(needsBath ? "§9给宠物洗澡" : "§7宠物很干净", FormImage.Type.PATH, IMAGE_PATH_BATH);
         builder.button(needsFeed ? "§6给宠物喂食" : "§7宠物不饿", FormImage.Type.PATH, IMAGE_PATH_FEED);
+        builder.button(muted ? "§a取消静音" : "§e静音宠物", FormImage.Type.PATH, IMAGE_PATH_MUTE);
         builder.button("§a刷新界面", FormImage.Type.PATH, IMAGE_PATH_REFRESH);
         builder.button("§e返回宠物列表", FormImage.Type.PATH, IMAGE_PATH_BACK);
         builder.button("§8关闭", FormImage.Type.PATH, IMAGE_PATH_CLOSE);
@@ -74,8 +77,9 @@ public class PetMenuGuiBedrock implements PetMenuGui {
                 case 2 -> hidePet(player, currentPet.id());
                 case 3 -> handleBath(player, currentPet.id());
                 case 4 -> handleFeed(player, currentPet.id());
-                case 5 -> openPetMenu(player, currentPet);
-                case 6 -> plugin.getGuiManager().openPetSelectMenu(player);
+                case 5 -> toggleMute(player, currentPet.id());
+                case 6 -> openPetMenu(player, currentPet);
+                case 7 -> plugin.getGuiManager().openPetSelectMenu(player);
                 default -> {
                 }
             }
@@ -210,12 +214,31 @@ public class PetMenuGuiBedrock implements PetMenuGui {
                 });
     }
 
-    private String buildPetContent(Player player, Pet pet, boolean needsBath, boolean needsFeed) {
+    private void toggleMute(Player player, long petId) {
+        plugin.getPetManger().togglePetMutedAsync(player, petId)
+                .whenComplete((updatedPet, throwable) -> {
+                    if (throwable != null) {
+                        send(player, "§c切换静音失败: " + throwable.getMessage());
+                        return;
+                    }
+                    if (updatedPet == null) {
+                        send(player, "§c未找到对应宠物。");
+                        return;
+                    }
+                    send(player, plugin.getPetManger().isPetMuted(updatedPet)
+                            ? "§a宠物已设为静音。"
+                            : "§a宠物已恢复发声。");
+                    openPetMenu(player, updatedPet);
+                });
+    }
+
+    private String buildPetContent(Player player, Pet pet, boolean needsBath, boolean needsFeed, boolean muted) {
         boolean blindBox = plugin.getPetManger().isBlindBoxPet(pet);
         StringBuilder content = new StringBuilder();
         content.append("§f名称: §r").append(plugin.getPetManger().getDisplayName(pet, player)).append('\n');
         content.append("§7ID: §f").append(pet.id()).append('\n');
         content.append("§7状态: ").append(pet.show() ? "§a已出战" : "§7未出战").append('\n');
+        content.append("§7静音: ").append(muted ? "§e是" : "§7否").append('\n');
         content.append("§7等级: §f").append(blindBox ? "???" : pet.level()).append('\n');
         content.append("§7经验: §f").append(pet.exp()).append(" / ").append(plugin.getPetProgressService().getRequiredExp(pet)).append('\n');
         content.append("§7类型: §f").append(blindBox ? "???" : pet.type()).append("\n\n");

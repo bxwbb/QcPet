@@ -27,6 +27,7 @@ public class PetConfigManger {
             "ARMOR_STAND",
             "%qcpet_key%",
             "%qcpet_key%",
+            "",
             1,
             "1",
             0,
@@ -93,6 +94,7 @@ public class PetConfigManger {
                         + section.getString("displayName", defaultConfig.displayName())
                         + defaultAdd.getString("displayName+", ""),
                 section.getString("displayName", defaultConfig.baseName()),
+                section.getString("modelId", defaultConfig.modelId()),
                 section.getDouble("times", defaultConfig.times()) * defaultAdd.getDouble("times*", 1D)
                         + defaultAdd.getDouble("times+", 0D),
                 section.getString("scaleRequirement", defaultConfig.scaleRequirement()),
@@ -143,6 +145,7 @@ public class PetConfigManger {
             String entityType,
             String displayName,
             String baseName,
+            String modelId,
             double times,
             String scaleRequirement,
             int expPerMinute,
@@ -159,6 +162,7 @@ public class PetConfigManger {
             return new PetConfig(
                     displayName,
                     baseName,
+                    modelId,
                     key,
                     times,
                     scaleRequirement,

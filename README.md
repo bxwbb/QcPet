@@ -133,6 +133,7 @@ pet:
 default:
   type: BEE
   displayName: "%qcpet_key%"
+  modelId: ""
   times: 1
   levelExpRequirement: "100 + (%1% * 25)"
   metaData: {}
@@ -156,6 +157,7 @@ pets:
   wolf:
     type: WOLF
     displayName: "&f守卫犬"
+    modelId: ""
     times: 1.2
     levelExpRequirement: "100 + (%1% * 20)"
     metaData:
@@ -164,6 +166,9 @@ pets:
       on-spawn:
         - "[console] tellraw %owner% {\"text\":\"守卫犬已到位\",\"color\":\"yellow\"}"
 ```
+
+`modelId` 用于给最终宠物名称添加最高优先级的模型前缀。
+例如 `modelId: "ABC"` 时，最终名称会变成 `@cet_ABC@原名称`；为空时不添加前缀。
 
 ## 宠物名称与占位符
 

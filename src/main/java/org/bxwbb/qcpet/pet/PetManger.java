@@ -1,5 +1,6 @@
 package org.bxwbb.qcpet.pet;
 
+import cn.qcrealm.qclevel.api.QcLevelAPI;
 import me.clip.placeholderapi.PlaceholderAPI;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.attribute.Attribute;
@@ -62,6 +63,7 @@ public class PetManger {
     private static final String LAST_BATH_REMINDER_TIME_KEY = "lastBathReminderTime";
     private static final String LAST_FEED_REMINDER_TIME_KEY = "lastFeedReminderTime";
     private static final String ENTITY_STATE_KEY = "entityState";
+    private static final String MUTED_KEY = "muted";
     private static final double TELEPORT_DISTANCE_SQUARED = 144.0D;
     private static final double FOLLOW_STOP_DISTANCE_SQUARED = 4.0D;
     private static final double FOLLOW_SLOT_REACHED_DISTANCE_SQUARED = 0.36D;
@@ -80,6 +82,13 @@ public class PetManger {
     public PetManger(QcPet plugin) {
         this.plugin = plugin;
         this.followTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tickVisiblePets, 1L, 1L);
+        QcLevelAPI.registerExpBoostProvider("qc-pet", player -> {
+            double ret = 1;
+            for (Pet pet : pets.get(player.getUniqueId())) {
+                ret *= pet.times();
+            }
+            return (ret - 1) > 0 ? ret - 1 : 0;
+        });
     }
 
     public Pet givePet(Player player, PetConfig petConfig) {
@@ -283,6 +292,43 @@ public class PetManger {
             }
         });
         return future;
+    }
+
+    public CompletableFuture<Pet> setPetMutedAsync(Player player, long petId, boolean muted) {
+        if (player == null) {
+            throw new IllegalArgumentException("player cannot be null");
+        }
+
+        CompletableFuture<Pet> future = new CompletableFuture<>();
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            try {
+                Pet pet = findPet(player, petId).orElse(null);
+                if (pet == null) {
+                    future.complete(null);
+                    return;
+                }
+
+                Pet updated = withDataValue(pet, MUTED_KEY, muted);
+                if (updated.entity() != null && updated.entity().isValid()) {
+                    updated = applyEntityState(player, updated, updated.entity());
+                }
+                replacePet(player, updated);
+                Pet resultPet = updated;
+                plugin.getPetUtil().savePetAsync(resultPet)
+                        .whenComplete((ignored, throwable) -> completePetFuture(future, resultPet, throwable));
+            } catch (Exception exception) {
+                future.completeExceptionally(exception);
+            }
+        });
+        return future;
+    }
+
+    public CompletableFuture<Pet> togglePetMutedAsync(Player player, long petId) {
+        Pet pet = getPet(player, petId);
+        if (pet == null) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return setPetMutedAsync(player, petId, !isPetMuted(pet));
     }
 
     public CompletableFuture<Pet> addPetExperienceAsync(Player player, long petId, int amount) {
@@ -610,6 +656,13 @@ public class PetManger {
             return "???";
         }
         String name = pet.request(pet.name());
+        PetConfig petConfig = plugin.getPetConfigManger().pets.get(pet.type());
+        if (petConfig != null) {
+            String modelId = petConfig.modelId();
+            if (modelId != null && !modelId.isBlank()) {
+                name = "@cet_" + modelId.trim() + "@" + name;
+            }
+        }
         if (viewer != null && plugin.getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             name = PlaceholderAPI.setPlaceholders(viewer, name);
         }
@@ -893,6 +946,7 @@ public class PetManger {
         if (pet == null || entity == null) {
             return;
         }
+        entity.setSilent(isPetMuted(pet));
         applyConfiguredEntityData(entity, pet.data());
         applyConfiguredEntityData(entity, getEntityStateData(pet));
     }
@@ -1143,6 +1197,12 @@ public class PetManger {
 
     private void followOwner(Player player, Pet pet, Entity entity) {
         boolean flyingPet = isFlyingPet(pet, entity);
+        if (!entity.getPassengers().isEmpty()) {
+            if (entity instanceof Mob mob) {
+                NmsPetAiController.stop(mob);
+            }
+            return;
+        }
         if (!entity.getWorld().equals(player.getWorld())) {
             entity.teleport(player.getLocation());
             return;
@@ -1385,6 +1445,10 @@ public class PetManger {
         String prefix = data == null ? "" : String.valueOf(data.getOrDefault(prefixKey, ""));
         String suffix = data == null ? "" : String.valueOf(data.getOrDefault(suffixKey, ""));
         return prefix + baseName + suffix;
+    }
+
+    public boolean isPetMuted(Pet pet) {
+        return getBooleanDataValue(pet, MUTED_KEY);
     }
 
     private Pet showPetInternal(Player player, Pet pet, boolean persist, boolean fireSpawnEvent) {

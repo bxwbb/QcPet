@@ -11,6 +11,7 @@ org\bxwbb\qcpet\math\UnaryNode.class
 org\bxwbb\qcpet\math\NullNode.class
 org\bxwbb\qcpet\math\StaticAccessNode.class
 org\bxwbb\qcpet\gui\SelectPetGuiBedrock.class
+org\bxwbb\qcpet\command\QcPetCommand$TargetPetSelection.class
 org\bxwbb\qcpet\pet\PetProgressService.class
 org\bxwbb\qcpet\gui\PetMenuGui.class
 org\bxwbb\qcpet\math\CastNode.class
