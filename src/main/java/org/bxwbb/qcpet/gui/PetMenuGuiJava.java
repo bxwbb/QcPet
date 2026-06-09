@@ -33,11 +33,13 @@ public class PetMenuGuiJava implements PetMenuGui {
     private static final int HIDE_SLOT = 33;
     private static final int BATH_SLOT = 34;
     private static final int FEED_SLOT = 35;
+    private static final int BACKPACK_SLOT = 39;
+    private static final int TRAVEL_SLOT = 40;
     private static final int MUTE_SLOT = 41;
     private static final int CLOSE_SLOT = 42;
 
     private final QcPet plugin;
-    private final Map<UUID, RenameSession> renameSessions = new HashMap<>();
+    private final Map<UUID, ChatSession> chatSessions = new HashMap<>();
 
     public PetMenuGuiJava(QcPet plugin) {
         this.plugin = plugin;
@@ -71,6 +73,12 @@ public class PetMenuGuiJava implements PetMenuGui {
         ));
         inventory.setItem(BATH_SLOT, createBathItem(pet));
         inventory.setItem(FEED_SLOT, createFeedItem(pet));
+        inventory.setItem(BACKPACK_SLOT, createBackpackItem(pet));
+        inventory.setItem(TRAVEL_SLOT, createActionItem(
+                Material.COMPASS,
+                "去往目标",
+                List.of("点击后在聊天栏输入 x z 坐标", "骑上宠物后会自动前往目标点")
+        ));
         inventory.setItem(MUTE_SLOT, createMuteItem(pet));
         inventory.setItem(CLOSE_SLOT, createActionItem(
                 Material.BARRIER,
@@ -108,12 +116,31 @@ public class PetMenuGuiJava implements PetMenuGui {
         }
 
         if (slot == RENAME_SLOT) {
-            renameSessions.put(player.getUniqueId(), new RenameSession(holder.petId()));
+            chatSessions.put(player.getUniqueId(), new ChatSession(holder.petId(), ChatSessionType.RENAME));
             player.closeInventory();
             send(player, "&e请在聊天栏输入新的宠物名称，输入 cancel 取消。");
             if (plugin.getConfig().getBoolean("pet.rename.allow-color-codes", true)) {
                 send(player, "&7支持使用 & 颜色代码。");
             }
+            return;
+        }
+
+        if (slot == BACKPACK_SLOT) {
+            Pet pet = plugin.getPetManger().getPet(player, holder.petId());
+            if (pet == null) {
+                send(player, "&c未找到对应宠物。");
+                player.closeInventory();
+                return;
+            }
+            plugin.getGuiManager().openPetBackpack(player, pet);
+            return;
+        }
+
+        if (slot == TRAVEL_SLOT) {
+            chatSessions.put(player.getUniqueId(), new ChatSession(holder.petId(), ChatSessionType.TRAVEL_TARGET));
+            player.closeInventory();
+            send(player, "&e请在聊天栏输入目标坐标，格式: x z");
+            send(player, "&7输入 cancel 取消。");
             return;
         }
 
@@ -125,7 +152,7 @@ public class PetMenuGuiJava implements PetMenuGui {
                 return;
             }
             if (!plugin.getPetManger().needsBath(pet)) {
-                send(player, "&c这只宠物现在还不想洗澡。");
+                send(player, "&c这只宠物现在还不需要洗澡。");
                 return;
             }
             plugin.getPetManger().bathPetAsync(player, holder.petId())
@@ -199,7 +226,7 @@ public class PetMenuGuiJava implements PetMenuGui {
     @Override
     public void handleRenameChat(AsyncPlayerChatEvent event) {
         Player player = event.getPlayer();
-        RenameSession session = renameSessions.remove(player.getUniqueId());
+        ChatSession session = chatSessions.remove(player.getUniqueId());
         if (session == null) {
             return;
         }
@@ -207,50 +234,24 @@ public class PetMenuGuiJava implements PetMenuGui {
         event.setCancelled(true);
         String rawMessage = event.getMessage().trim();
         if (rawMessage.equalsIgnoreCase("cancel")) {
-            plugin.getServer().getScheduler().runTask(plugin, () -> send(player, "&e已取消宠物重命名。"));
+            plugin.getServer().getScheduler().runTask(plugin, () -> send(player, "&e已取消当前操作。"));
             return;
         }
 
-        String normalizedName = plugin.getPetManger().normalizePetName(rawMessage);
-        if (normalizedName.isEmpty()) {
-            restoreRenameSession(player, session, "名称不能为空，请重新输入，或输入 cancel 取消。");
+        if (session.type() == ChatSessionType.TRAVEL_TARGET) {
+            handleTravelTargetChat(player, session, rawMessage);
             return;
         }
 
-        int maxLength = plugin.getConfig().getInt("pet.rename.max-length", 32);
-        if (normalizedName.length() > maxLength) {
-            restoreRenameSession(player, session, "名称过长，最多 " + maxLength + " 个字符。");
-            return;
-        }
-
-        String invalidPattern = plugin.getConfig().getString("pet.rename.invalid-pattern", "[\\r\\n\\t]");
-        if (containsInvalidCharacters(rawMessage, invalidPattern)) {
-            restoreRenameSession(player, session, "名称包含非法字符，请重新输入。");
-            return;
-        }
-
-        plugin.getServer().getScheduler().runTask(plugin, () ->
-                plugin.getPetManger().renamePetAsync(player, session.petId(), rawMessage)
-                        .whenComplete((pet, throwable) -> {
-                            if (throwable != null) {
-                                send(player, "&c重命名失败: " + throwable.getMessage());
-                                return;
-                            }
-                            if (pet == null) {
-                                send(player, "&c未找到对应宠物，可能已被删除。");
-                                return;
-                            }
-                            send(player, "&a宠物已重命名。");
-                            openPetMenu(player, pet);
-                        })
-        );
+        handleRenameInput(player, session, rawMessage);
     }
 
     @Override
     public void handlePlayerQuit(Player player) {
-        renameSessions.remove(player.getUniqueId());
+        chatSessions.remove(player.getUniqueId());
     }
 
+    @Override
     public ItemStack createPetEggItem(Player player, Pet pet) {
         PetConfig petConfig = plugin.getPetConfigManger().pets.get(pet.type());
         boolean blindBox = plugin.getPetManger().isBlindBoxPet(pet);
@@ -322,7 +323,7 @@ public class PetMenuGuiJava implements PetMenuGui {
         List<String> lore = new ArrayList<>();
         if (needsFeed) {
             lore.add("点击后给宠物喂食");
-            lore.add("喂食后会恢复饥饿状态");
+            lore.add("喂食后会恢复饱食状态");
             lore.add("喂食后会获得 " + plugin.getPetManger().getFeedRewardExp(pet) + " 经验");
         } else {
             lore.add("这只宠物现在不饿");
@@ -332,6 +333,20 @@ public class PetMenuGuiJava implements PetMenuGui {
                 needsFeed ? Material.COOKED_BEEF : Material.BREAD,
                 needsFeed ? "给宠物喂食" : "宠物不饿",
                 lore
+        );
+    }
+
+    private ItemStack createBackpackItem(Pet pet) {
+        int unlockedSlots = plugin.getPetBackpackService().getUnlockedSlots(pet);
+        int maxSlots = plugin.getPetBackpackService().getMaxSlots(pet);
+        return createActionItem(
+                Material.CHEST,
+                "宠物背包",
+                List.of(
+                        "当前已解锁: " + unlockedSlots + " 格",
+                        "最大可解锁: " + maxSlots + " 格",
+                        "点击打开宠物背包"
+                )
         );
     }
 
@@ -345,6 +360,70 @@ public class PetMenuGuiJava implements PetMenuGui {
                         muted ? "点击后恢复宠物发声" : "点击后让宠物静音"
                 )
         );
+    }
+
+    private void handleRenameInput(Player player, ChatSession session, String rawMessage) {
+        String normalizedName = plugin.getPetManger().normalizePetName(rawMessage);
+        if (normalizedName.isEmpty()) {
+            restoreChatSession(player, session, "名称不能为空，请重新输入，或输入 cancel 取消。");
+            return;
+        }
+
+        int maxLength = plugin.getConfig().getInt("pet.rename.max-length", 32);
+        if (normalizedName.length() > maxLength) {
+            restoreChatSession(player, session, "名称过长，最多 " + maxLength + " 个字符。");
+            return;
+        }
+
+        String invalidPattern = plugin.getConfig().getString("pet.rename.invalid-pattern", "[\\r\\n\\t]");
+        if (containsInvalidCharacters(rawMessage, invalidPattern)) {
+            restoreChatSession(player, session, "名称包含非法字符，请重新输入。");
+            return;
+        }
+
+        plugin.getServer().getScheduler().runTask(plugin, () ->
+                plugin.getPetManger().renamePetAsync(player, session.petId(), rawMessage)
+                        .whenComplete((pet, throwable) -> {
+                            if (throwable != null) {
+                                send(player, "&c重命名失败: " + throwable.getMessage());
+                                return;
+                            }
+                            if (pet == null) {
+                                send(player, "&c未找到对应宠物，可能已被删除。");
+                                return;
+                            }
+                            send(player, "&a宠物已重命名。");
+                            openPetMenu(player, pet);
+                        })
+        );
+    }
+
+    private void handleTravelTargetChat(Player player, ChatSession session, String rawMessage) {
+        String[] parts = rawMessage.split("\\s+");
+        if (parts.length != 2) {
+            restoreChatSession(player, session, "坐标格式错误，请输入 x z，例如 100 200。");
+            return;
+        }
+
+        double x;
+        double z;
+        try {
+            x = Double.parseDouble(parts[0]);
+            z = Double.parseDouble(parts[1]);
+        } catch (NumberFormatException exception) {
+            restoreChatSession(player, session, "坐标必须是数字，请重新输入。");
+            return;
+        }
+
+        plugin.getServer().getScheduler().runTask(plugin, () -> {
+            boolean scheduled = plugin.getPetManger().scheduleAutoTravel(player, session.petId(), x, z);
+            if (!scheduled) {
+                send(player, "&c未找到对应宠物，可能已被收回或删除。");
+                return;
+            }
+            send(player, "&a目标点已设置为 &eX: " + x + " Z: " + z);
+            send(player, "&e请先骑上这只宠物，宠物会自动前往目标点。");
+        });
     }
 
     private static Material resolveSpawnEggMaterial(PetConfig petConfig) {
@@ -385,8 +464,8 @@ public class PetMenuGuiJava implements PetMenuGui {
         return itemStack;
     }
 
-    private void restoreRenameSession(Player player, RenameSession session, String message) {
-        renameSessions.put(player.getUniqueId(), session);
+    private void restoreChatSession(Player player, ChatSession session, String message) {
+        chatSessions.put(player.getUniqueId(), session);
         plugin.getServer().getScheduler().runTask(plugin, () -> send(player, "&c" + message));
     }
 
@@ -402,6 +481,11 @@ public class PetMenuGuiJava implements PetMenuGui {
         }
     }
 
-    private record RenameSession(long petId) {
+    private record ChatSession(long petId, ChatSessionType type) {
+    }
+
+    private enum ChatSessionType {
+        RENAME,
+        TRAVEL_TARGET
     }
 }

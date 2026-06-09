@@ -5,6 +5,8 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryCloseEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
@@ -23,6 +25,7 @@ public class GuiManager implements Listener {
     private final PetMenuGui bedrockPetMenuGui;
     private final SelectPetGui javaSelectPetGui;
     private final SelectPetGui bedrockSelectPetGui;
+    private final PetBackpackGui petBackpackGui;
 
     public GuiManager(QcPet plugin) {
         this.plugin = plugin;
@@ -30,6 +33,7 @@ public class GuiManager implements Listener {
         this.bedrockPetMenuGui = new PetMenuGuiBedrock(plugin);
         this.javaSelectPetGui = new SelectPetGuiJava(plugin, javaPetMenuGui);
         this.bedrockSelectPetGui = new SelectPetGuiBedrock(plugin, javaPetMenuGui);
+        this.petBackpackGui = new PetBackpackGui(plugin);
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
     }
 
@@ -88,6 +92,10 @@ public class GuiManager implements Listener {
             javaPetMenuGui.handleInventoryClick(player, event);
             return;
         }
+        if (petBackpackGui.isBackpack(holder)) {
+            petBackpackGui.handleInventoryClick(player, event);
+            return;
+        }
         if (bedrockPetMenuGui.isPetMenu(holder)) {
             event.setCancelled(true);
             bedrockPetMenuGui.handleInventoryClick(player, event);
@@ -108,6 +116,16 @@ public class GuiManager implements Listener {
     public void onRenameChat(AsyncPlayerChatEvent event) {
         javaPetMenuGui.handleRenameChat(event);
         bedrockPetMenuGui.handleRenameChat(event);
+    }
+
+    @EventHandler
+    public void onInventoryDrag(InventoryDragEvent event) {
+        petBackpackGui.handleInventoryDrag(event);
+    }
+
+    @EventHandler
+    public void onInventoryClose(InventoryCloseEvent event) {
+        petBackpackGui.handleInventoryClose(event.getInventory());
     }
 
     @EventHandler
@@ -137,6 +155,10 @@ public class GuiManager implements Listener {
 
     public void openPetMenuForPlayer(Player player, Pet pet) {
         getPetMenuGui(player).openPetMenu(player, pet);
+    }
+
+    public void openPetBackpack(Player player, Pet pet) {
+        petBackpackGui.open(player, pet);
     }
 
     private PetMenuGui getPetMenuGui(Player player) {

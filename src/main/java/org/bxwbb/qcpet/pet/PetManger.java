@@ -10,7 +10,10 @@ import org.bukkit.Location;
 import org.bukkit.Input;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
+import org.bukkit.World;
+import org.bukkit.Material;
 import org.bukkit.command.CommandSender;
+import org.bukkit.block.Block;
 import org.bukkit.entity.Allay;
 import org.bukkit.entity.Ambient;
 import org.bukkit.entity.Bat;
@@ -42,6 +45,7 @@ import org.bukkit.entity.Wolf;
 import org.bukkit.entity.Display;
 import org.bukkit.entity.TextDisplay;
 import org.bukkit.scheduler.BukkitTask;
+import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
 import org.bxwbb.qcpet.QcPet;
 import org.bxwbb.qcpet.math.MathExpression;
@@ -52,6 +56,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.PriorityQueue;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ThreadLocalRandom;
@@ -84,6 +89,7 @@ public class PetManger {
     public final Map<UUID, List<Pet>> pets = new HashMap<>();
     private final Map<UUID, List<Long>> temporarilyHiddenPets = new HashMap<>();
     private final Map<UUID, BlindBoxRevealInteraction> blindBoxRevealInteractions = new HashMap<>();
+    private final Map<UUID, AutoTravelState> autoTravelStates = new HashMap<>();
     private final BukkitTask followTask;
     private int internalSpawnDepth;
 
@@ -904,6 +910,44 @@ public class PetManger {
         return petConfig == null || petConfig.movable();
     }
 
+    public boolean canPetFloatOnWater(Pet pet) {
+        PetConfig petConfig = pet == null ? null : plugin.getPetConfigManger().pets.get(pet.type());
+        return petConfig != null && petConfig.waterFloat();
+    }
+
+    public boolean canPetFly(Pet pet) {
+        PetConfig petConfig = pet == null ? null : plugin.getPetConfigManger().pets.get(pet.type());
+        return petConfig != null && petConfig.flyable();
+    }
+
+    public boolean canPetDefendOwnerDuringAutoTravel(Pet pet) {
+        PetConfig petConfig = pet == null ? null : plugin.getPetConfigManger().pets.get(pet.type());
+        return petConfig != null && petConfig.autoTravelDefendOwner();
+    }
+
+    public double getPetMovementMultiplier(Pet pet) {
+        PetConfig petConfig = pet == null ? null : plugin.getPetConfigManger().pets.get(pet.type());
+        return Math.max(0.1D, petConfig == null ? 1.0D : petConfig.movementMultiplier());
+    }
+
+    public boolean scheduleAutoTravel(Player player, long petId, double x, double z) {
+        if (player == null || findPet(player, petId).isEmpty()) {
+            return false;
+        }
+        autoTravelStates.put(player.getUniqueId(), new AutoTravelState(petId, x, z));
+        return true;
+    }
+
+    public void clearAutoTravel(Player player, long petId) {
+        if (player == null) {
+            return;
+        }
+        AutoTravelState state = autoTravelStates.get(player.getUniqueId());
+        if (state != null && state.petId() == petId) {
+            autoTravelStates.remove(player.getUniqueId());
+        }
+    }
+
     public boolean needsBath(Pet pet) {
         if (shouldDisplayAsBlindBox(pet)) {
             return false;
@@ -982,6 +1026,7 @@ public class PetManger {
 
     private void removeEntity(Pet pet) {
         cleanupBlindBoxRevealInteraction(pet == null || pet.owner() == null ? null : pet.owner().getUniqueId(), pet == null ? 0L : pet.id());
+        clearAutoTravel(pet == null ? null : pet.owner(), pet == null ? 0L : pet.id());
         Entity entity = pet.entity();
         if (entity != null && !entity.isDead()) {
             if (entity instanceof Player playerEntity && playerEntity != pet.owner()) {
@@ -1413,7 +1458,10 @@ public class PetManger {
     }
 
     private void followOwner(Player player, Pet pet, Entity entity) {
-        boolean flyingPet = isFlyingPet(pet, entity);
+        boolean flyingPet = canPetFly(pet);
+        if (handleAutoTravel(player, pet, entity, flyingPet)) {
+            return;
+        }
         if (handleMountedMovement(player, pet, entity, flyingPet)) {
             return;
         }
@@ -1428,7 +1476,7 @@ public class PetManger {
             return;
         }
 
-        Location targetLocation = getFollowLocation(player, pet, flyingPet);
+        Location targetLocation = getFollowLocation(player, pet, entity, flyingPet);
         double ownerHorizontalDistanceSquared = getHorizontalDistanceSquared(entity.getLocation(), player.getLocation());
         double targetHorizontalDistanceSquared = getHorizontalDistanceSquared(entity.getLocation(), targetLocation);
         if (ownerHorizontalDistanceSquared >= TELEPORT_DISTANCE_SQUARED) {
@@ -1453,14 +1501,18 @@ public class PetManger {
         }
         if (entity instanceof Mob mob) {
             if (flyingPet) {
-                NmsPetAiController.moveFlyingPet(mob, targetLocation);
+                if (targetHorizontalDistanceSquared >= GROUND_SLOT_TELEPORT_DISTANCE_SQUARED) {
+                    entity.teleport(targetLocation);
+                    return;
+                }
+                NmsPetAiController.moveFlyingPet(mob, targetLocation, getFollowFlyingSpeed(pet));
                 return;
             }
             if (targetHorizontalDistanceSquared >= GROUND_SLOT_TELEPORT_DISTANCE_SQUARED) {
                 entity.teleport(targetLocation);
                 return;
             }
-            NmsPetAiController.moveGroundPet(mob, targetLocation);
+            NmsPetAiController.moveGroundPet(mob, targetLocation, getFollowGroundSpeed(pet));
             return;
         }
         if (entity instanceof Player playerEntity && playerEntity != player) {
@@ -1493,7 +1545,7 @@ public class PetManger {
         }
 
         entity.setRotation(rider.getLocation().getYaw(), entity.getLocation().getPitch());
-        Vector movementVector = resolveMountedMovementVector(rider, entity, flyingPet);
+        Vector movementVector = resolveMountedMovementVector(rider, pet, entity, flyingPet);
         if (movementVector == null) {
             if (entity instanceof Mob mob) {
                 NmsPetAiController.stop(mob);
@@ -1511,12 +1563,16 @@ public class PetManger {
         if (entity instanceof Mob mob) {
             NmsPetAiController.stop(mob);
         }
+        applyMountedGroundStep(entity, movementVector);
+        if (!flyingPet) {
+            applyMountedWaterFloat(pet, entity, movementVector);
+        }
         entity.setVelocity(movementVector);
         entity.setFallDistance(0F);
         return true;
     }
 
-    private Vector resolveMountedMovementVector(Player rider, Entity entity, boolean flyingPet) {
+    private Vector resolveMountedMovementVector(Player rider, Pet pet, Entity entity, boolean flyingPet) {
         Input input = rider.getCurrentInput();
         if (input == null) {
             return null;
@@ -1524,8 +1580,11 @@ public class PetManger {
 
         double forward = (input.isForward() ? 1D : 0D) - (input.isBackward() ? 1D : 0D);
         double strafe = (input.isRight() ? 1D : 0D) - (input.isLeft() ? 1D : 0D);
-        double vertical = flyingPet ? (input.isJump() ? 1D : 0D) - (input.isSneak() ? 1D : 0D) : 0D;
-        if (forward == 0D && strafe == 0D && vertical == 0D) {
+        double vertical = 0D;
+        if (flyingPet) {
+            vertical = isRiderTryingToAscend(rider, input) ? 1D : -getRiddenFlyingGlideFactor();
+        }
+        if (forward == 0D && strafe == 0D && !flyingPet) {
             return null;
         }
 
@@ -1538,47 +1597,576 @@ public class PetManger {
         Vector rightVector = new Vector(-forwardVector.getZ(), 0D, forwardVector.getX());
         Vector movement = forwardVector.multiply(forward).add(rightVector.multiply(strafe));
         if (movement.lengthSquared() > 1.0E-6D) {
-            movement.normalize().multiply(flyingPet ? getRiddenFlyingSpeed() : getRiddenGroundSpeed());
+            movement.normalize().multiply(flyingPet ? getRiddenFlyingSpeed(pet) : getRiddenGroundSpeed(pet));
         } else {
             movement = new Vector(0D, 0D, 0D);
         }
         if (flyingPet) {
-            movement.setY(vertical * getRiddenFlyingVerticalSpeed());
-            clampMountedFlyingHeight(entity.getLocation(), movement);
+            movement.setY(vertical * getRiddenFlyingVerticalSpeed(pet));
         } else {
             movement.setY(entity.getVelocity().getY());
         }
         return movement;
     }
 
-    private void clampMountedFlyingHeight(Location location, Vector movement) {
-        double maxFlyingHeight = Math.max(0.5D, plugin.getConfig().getDouble("pet.ride.flying-max-height", 5.0D));
-        double verticalSpeed = getRiddenFlyingVerticalSpeed();
-        Location probeLocation = location.clone().add(movement.getX(), 0D, movement.getZ());
-        int highestBlockY = location.getWorld().getHighestBlockYAt(probeLocation);
-        double minY = highestBlockY + 1.0D;
-        double maxY = minY + maxFlyingHeight;
-        double nextY = location.getY() + movement.getY();
-        if (nextY < minY) {
-            movement.setY(Math.min(verticalSpeed, Math.max(0D, minY - location.getY())));
-        } else if (nextY > maxY) {
-            movement.setY(Math.max(-verticalSpeed, Math.min(0D, maxY - location.getY())));
+    private boolean isRiderTryingToAscend(Player rider, Input input) {
+        if (input != null && input.isJump()) {
+            return true;
+        }
+        return rider != null && rider.getVelocity().getY() > 0.08D;
+    }
+
+    private double getRiddenGroundSpeed(Pet pet) {
+        return Math.max(0.05D, plugin.getConfig().getDouble("pet.ride.ground-speed", 0.55D) * getPetMovementMultiplier(pet));
+    }
+
+    private double getRiddenFlyingSpeed(Pet pet) {
+        return Math.max(0.05D, plugin.getConfig().getDouble("pet.ride.flying-speed", 0.45D) * getPetMovementMultiplier(pet));
+    }
+
+    private double getRiddenFlyingVerticalSpeed(Pet pet) {
+        return Math.max(0.02D, plugin.getConfig().getDouble("pet.ride.flying-vertical-speed", 0.2D) * getPetMovementMultiplier(pet));
+    }
+
+    private double getRiddenFlyingGlideFactor() {
+        return Math.max(0D, plugin.getConfig().getDouble("pet.ride.flying-glide-factor", 0.35D));
+    }
+
+    private double getFollowGroundSpeed(Pet pet) {
+        return Math.max(0.05D, 1.05D * getPetMovementMultiplier(pet));
+    }
+
+    private double getFollowFlyingSpeed(Pet pet) {
+        return Math.max(0.05D, 1.2D * getPetMovementMultiplier(pet));
+    }
+
+    private void applyMountedGroundStep(Entity entity, Vector movementVector) {
+        if (!entity.isOnGround() && !isEntityNearGround(entity)) {
+            return;
+        }
+        Vector horizontalMovement = movementVector.clone().setY(0D);
+        if (horizontalMovement.lengthSquared() <= 1.0E-6D) {
+            return;
+        }
+
+        int maxStepBlocks = resolveMountedStepBlocks(entity);
+        if (maxStepBlocks < 1) {
+            return;
+        }
+
+        Vector direction = horizontalMovement.clone().normalize();
+        double probeDistance = Math.max(entity.getWidth() * 0.5D + 0.35D, Math.min(1.0D, horizontalMovement.length() + entity.getWidth() * 0.5D));
+        if (!collidesAtOffset(entity, direction.getX() * probeDistance, 0D, direction.getZ() * probeDistance)) {
+            return;
+        }
+
+        for (int step = 1; step <= maxStepBlocks; step++) {
+            double offsetX = direction.getX() * probeDistance;
+            double offsetY = step;
+            double offsetZ = direction.getZ() * probeDistance;
+            if (collidesAtOffset(entity, offsetX, offsetY, offsetZ)) {
+                continue;
+            }
+            if (!hasSupportAtOffset(entity, offsetX, offsetY, offsetZ)) {
+                continue;
+            }
+            movementVector.setY(Math.max(movementVector.getY(), step));
+            return;
         }
     }
 
-    private double getRiddenGroundSpeed() {
-        return Math.max(0.05D, plugin.getConfig().getDouble("pet.ride.ground-speed", 0.55D));
+    private boolean isEntityNearGround(Entity entity) {
+        BoundingBox box = entity.getBoundingBox();
+        World world = entity.getWorld();
+        double centerX = (box.getMinX() + box.getMaxX()) * 0.5D;
+        double centerZ = (box.getMinZ() + box.getMaxZ()) * 0.5D;
+        int blockX = (int) Math.floor(centerX);
+        int blockY = (int) Math.floor(box.getMinY() - 0.2D);
+        int blockZ = (int) Math.floor(centerZ);
+        Block support = world.getBlockAt(blockX, blockY, blockZ);
+        return !support.isPassable() || isWaterSurfaceBlock(support);
     }
 
-    private double getRiddenFlyingSpeed() {
-        return Math.max(0.05D, plugin.getConfig().getDouble("pet.ride.flying-speed", 0.45D));
+    private int resolveMountedStepBlocks(Entity entity) {
+        double size = Math.max(entity.getHeight(), entity.getWidth());
+        return Math.max(1, (int) Math.floor(size));
     }
 
-    private double getRiddenFlyingVerticalSpeed() {
-        return Math.max(0.02D, plugin.getConfig().getDouble("pet.ride.flying-vertical-speed", 0.2D));
+    private void applyMountedWaterFloat(Pet pet, Entity entity, Vector movementVector) {
+        if (!canPetFloatOnWater(pet)) {
+            return;
+        }
+        if (movementVector.getY() < 0D) {
+            movementVector.setY(0D);
+        }
+
+        Location location = entity.getLocation();
+        Vector horizontalDirection = movementVector.clone().setY(0D);
+        if (horizontalDirection.lengthSquared() <= 1.0E-6D) {
+            horizontalDirection = location.getDirection().setY(0D);
+        }
+        if (horizontalDirection.lengthSquared() <= 1.0E-6D) {
+            horizontalDirection = new Vector(0D, 0D, 1D);
+        } else {
+            horizontalDirection.normalize();
+        }
+
+        double probeDistance = Math.max(entity.getWidth() * 0.5D + 0.35D, 0.6D);
+        Block supportBlock = getWaterSurfaceSupportBlock(entity, horizontalDirection, probeDistance);
+        if (supportBlock == null) {
+            return;
+        }
+
+        double targetY = supportBlock.getY() + 1.0D;
+        double deltaY = targetY - location.getY();
+        if (deltaY > 0D) {
+            movementVector.setY(Math.max(movementVector.getY(), Math.min(deltaY, 0.6D)));
+        } else if (Math.abs(deltaY) <= 0.25D) {
+            movementVector.setY(Math.max(movementVector.getY(), deltaY));
+        }
+        entity.setFallDistance(0F);
     }
 
-    private Location getFollowLocation(Player player, Pet pet, boolean flyingPet) {
+    private Block getWaterSurfaceSupportBlock(Entity entity, Vector direction, double probeDistance) {
+        BoundingBox box = entity.getBoundingBox();
+        World world = entity.getWorld();
+        double sampleX = ((box.getMinX() + box.getMaxX()) * 0.5D) + direction.getX() * probeDistance;
+        double sampleZ = ((box.getMinZ() + box.getMaxZ()) * 0.5D) + direction.getZ() * probeDistance;
+        int blockX = (int) Math.floor(sampleX);
+        int blockZ = (int) Math.floor(sampleZ);
+        int minY = (int) Math.floor(box.getMinY()) - 1;
+        int maxY = (int) Math.floor(box.getMinY()) + 1;
+        for (int y = maxY; y >= minY; y--) {
+            Block block = world.getBlockAt(blockX, y, blockZ);
+            if (block.getType() == Material.BUBBLE_COLUMN) {
+                continue;
+            }
+            if (isWaterSurfaceBlock(block)) {
+                return block;
+            }
+            if (!block.isPassable()) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private boolean handleAutoTravel(Player owner, Pet pet, Entity entity, boolean flyingPet) {
+        AutoTravelState state = autoTravelStates.get(owner.getUniqueId());
+        if (state == null || state.petId() != pet.id()) {
+            return false;
+        }
+        if (entity.getPassengers().isEmpty() || !(entity.getPassengers().getFirst() instanceof Player rider)
+                || !rider.getUniqueId().equals(owner.getUniqueId())) {
+            return false;
+        }
+        Location targetLocation = resolveAutoTravelTargetLocation(entity, state, flyingPet);
+        double horizontalDistanceSquared = getHorizontalDistanceSquared(entity.getLocation(), targetLocation);
+        if (horizontalDistanceSquared <= 2.25D) {
+            autoTravelStates.remove(owner.getUniqueId());
+            if (entity instanceof Mob mob) {
+                NmsPetAiController.stop(mob);
+            }
+            entity.setVelocity(new Vector(0D, 0D, 0D));
+            owner.sendMessage(org.bxwbb.qcpet.utils.TextComponentUtil.legacy("&a宠物已到达目标点附近。"));
+            return true;
+        }
+        if (!flyingPet) {
+            Location pathTarget = resolveAutoTravelPathTarget(owner, entity, state);
+            if (pathTarget != null) {
+                targetLocation = pathTarget;
+            } else if (isAutoTravelBlocked(owner, entity, state, horizontalDistanceSquared, false)) {
+                if (entity instanceof Mob mob) {
+                    NmsPetAiController.stop(mob);
+                }
+                entity.setVelocity(new Vector(0D, Math.min(entity.getVelocity().getY(), 0D), 0D));
+                entity.setFallDistance(0F);
+                return true;
+            }
+        }
+        faceTowards(entity, targetLocation);
+        Vector movementVector = resolveAutoTravelMovementVector(pet, entity, targetLocation, flyingPet);
+        applyMountedGroundStep(entity, movementVector);
+        if (!flyingPet) {
+            applyMountedWaterFloat(pet, entity, movementVector);
+        }
+        entity.setVelocity(movementVector);
+        entity.setFallDistance(0F);
+        handleAutoTravelDefendOwner(owner, pet, entity, state);
+        return true;
+    }
+
+    private Vector resolveAutoTravelMovementVector(Pet pet, Entity entity, Location targetLocation, boolean flyingPet) {
+        Location current = entity.getLocation();
+        Vector delta = targetLocation.toVector().subtract(current.toVector());
+        Vector movement = delta.clone().setY(0D);
+        if (movement.lengthSquared() > 1.0E-6D) {
+            movement.normalize().multiply(flyingPet ? getRiddenFlyingSpeed(pet) : getRiddenGroundSpeed(pet));
+        } else {
+            movement = new Vector(0D, 0D, 0D);
+        }
+        if (flyingPet) {
+            double verticalInput = current.getY() + 0.35D < targetLocation.getY() ? 1D : -getRiddenFlyingGlideFactor();
+            if (collidesAhead(entity, movement, 0D)) {
+                verticalInput = 1D;
+            }
+            movement.setY(verticalInput * getRiddenFlyingVerticalSpeed(pet));
+        } else {
+            movement.setY(entity.getVelocity().getY());
+        }
+        return movement;
+    }
+
+    private boolean isAutoTravelBlocked(Player owner, Entity entity, AutoTravelState state, double horizontalDistanceSquared, boolean flyingPet) {
+        Location current = entity.getLocation();
+        double movedDistanceSquared = state.lastCheckedLocation == null
+                ? Double.MAX_VALUE
+                : getHorizontalDistanceSquared(current, state.lastCheckedLocation);
+        state.lastCheckedLocation = current.clone();
+        if (horizontalDistanceSquared <= 4.0D) {
+            state.stuckTicks = 0L;
+            return false;
+        }
+        if (movedDistanceSquared <= 0.01D) {
+            state.stuckTicks++;
+        } else {
+            state.stuckTicks = 0L;
+        }
+        if (state.stuckTicks < 20L) {
+            return false;
+        }
+        if (flyingPet) {
+            return false;
+        }
+        long currentTick = plugin.getServer().getCurrentTick();
+        if (currentTick - state.lastBlockedNotifyTick >= 20L) {
+            owner.sendActionBar(org.bxwbb.qcpet.utils.TextComponentUtil.legacy("&e宠物被地形挡住了，无法从陆地到达目标点。"));
+            spawnAutoTravelConfusedParticles(entity);
+            state.lastBlockedNotifyTick = currentTick;
+        }
+        return true;
+    }
+
+    private Location resolveAutoTravelPathTarget(Player owner, Entity entity, AutoTravelState state) {
+        World world = entity.getWorld();
+        int targetBlockX = (int) Math.floor(state.targetX());
+        int targetBlockZ = (int) Math.floor(state.targetZ());
+        if (state.pathNodes == null
+                || state.pathNodes.isEmpty()
+                || state.pathWorldUid == null
+                || !state.pathWorldUid.equals(world.getUID())
+                || state.pathTargetBlockX != targetBlockX
+                || state.pathTargetBlockZ != targetBlockZ) {
+            rebuildAutoTravelPath(owner, entity, state, targetBlockX, targetBlockZ);
+        }
+        if (state.pathNodes == null || state.pathNodes.isEmpty()) {
+            return null;
+        }
+        while (state.pathIndex < state.pathNodes.size()) {
+            PathNode node = state.pathNodes.get(state.pathIndex);
+            Location nodeLocation = toAutoTravelNodeLocation(world, node);
+            if (getHorizontalDistanceSquared(entity.getLocation(), nodeLocation) <= 1.0D) {
+                state.pathIndex++;
+                continue;
+            }
+            return nodeLocation;
+        }
+        rebuildAutoTravelPath(owner, entity, state, targetBlockX, targetBlockZ);
+        if (state.pathNodes == null || state.pathNodes.isEmpty() || state.pathIndex >= state.pathNodes.size()) {
+            return null;
+        }
+        return toAutoTravelNodeLocation(world, state.pathNodes.get(state.pathIndex));
+    }
+
+    private void rebuildAutoTravelPath(Player owner, Entity entity, AutoTravelState state, int targetBlockX, int targetBlockZ) {
+        state.pathWorldUid = entity.getWorld().getUID();
+        state.pathTargetBlockX = targetBlockX;
+        state.pathTargetBlockZ = targetBlockZ;
+        state.pathIndex = 0;
+        state.pathNodes = findAutoTravelPath(entity, targetBlockX, targetBlockZ);
+        if ((state.pathNodes == null || state.pathNodes.isEmpty())
+                && plugin.getServer().getCurrentTick() - state.lastBlockedNotifyTick >= 20L) {
+            owner.sendActionBar(org.bxwbb.qcpet.utils.TextComponentUtil.legacy("&e宠物被地形挡住了，无法从陆地到达目标点。"));
+            spawnAutoTravelConfusedParticles(entity);
+            state.lastBlockedNotifyTick = plugin.getServer().getCurrentTick();
+        }
+    }
+
+    private List<PathNode> findAutoTravelPath(Entity entity, int targetBlockX, int targetBlockZ) {
+        World world = entity.getWorld();
+        PathNode start = resolveAutoTravelStartNode(entity);
+        PathNode goal = resolveAutoTravelGoalNode(entity, targetBlockX, targetBlockZ);
+        if (start == null || goal == null) {
+            return List.of();
+        }
+        if (start.equals(goal)) {
+            return List.of(goal);
+        }
+
+        int maxSearchRadius = Math.max(8, plugin.getConfig().getInt("pet.auto-travel.path-search-radius", 24));
+        PriorityQueue<PathRecord> openSet = new PriorityQueue<>((left, right) -> Double.compare(left.fScore, right.fScore));
+        Map<PathNode, PathRecord> records = new HashMap<>();
+        PathRecord startRecord = new PathRecord(start, null, 0D, estimatePathCost(start, goal));
+        records.put(start, startRecord);
+        openSet.add(startRecord);
+
+        while (!openSet.isEmpty()) {
+            PathRecord current = openSet.poll();
+            if (current.closed) {
+                continue;
+            }
+            current.closed = true;
+            if (current.node.equals(goal)) {
+                return buildPathNodes(current);
+            }
+            for (PathNode neighbor : findPathNeighbors(entity, current.node, start, maxSearchRadius)) {
+                double tentativeG = current.gScore + movementCost(current.node, neighbor);
+                PathRecord existing = records.get(neighbor);
+                if (existing != null && tentativeG >= existing.gScore) {
+                    continue;
+                }
+                PathRecord updated = new PathRecord(neighbor, current, tentativeG, tentativeG + estimatePathCost(neighbor, goal));
+                records.put(neighbor, updated);
+                openSet.add(updated);
+            }
+        }
+        return List.of();
+    }
+
+    private PathNode resolveAutoTravelStartNode(Entity entity) {
+        Location location = entity.getLocation();
+        return findNearestWalkableNode(entity, location.getBlockX(), location.getBlockY(), location.getBlockZ(), 2);
+    }
+
+    private PathNode resolveAutoTravelGoalNode(Entity entity, int blockX, int blockZ) {
+        World world = entity.getWorld();
+        return findNearestWalkableNode(entity, blockX, world.getHighestBlockYAt(blockX, blockZ) + 1, blockZ, 2);
+    }
+
+    private PathNode findNearestWalkableNode(Entity entity, int blockX, int baseY, int blockZ, int verticalRadius) {
+        for (int offsetY = 0; offsetY <= verticalRadius; offsetY++) {
+            int upY = baseY + offsetY;
+            if (isWalkableNode(entity, blockX, upY, blockZ)) {
+                return new PathNode(blockX, upY, blockZ);
+            }
+            int downY = baseY - offsetY;
+            if (offsetY > 0 && isWalkableNode(entity, blockX, downY, blockZ)) {
+                return new PathNode(blockX, downY, blockZ);
+            }
+        }
+        return null;
+    }
+
+    private boolean isWalkableNode(Entity entity, int blockX, int blockY, int blockZ) {
+        World world = entity.getWorld();
+        Block feet = world.getBlockAt(blockX, blockY, blockZ);
+        Block head = world.getBlockAt(blockX, blockY + 1, blockZ);
+        Block below = world.getBlockAt(blockX, blockY - 1, blockZ);
+        if (!feet.isPassable() || !head.isPassable()) {
+            return false;
+        }
+        if (below.isPassable() && !isWaterSurfaceBlock(below)) {
+            return false;
+        }
+
+        Location current = entity.getLocation();
+        double targetCenterX = blockX + 0.5D;
+        double targetCenterZ = blockZ + 0.5D;
+        double offsetX = targetCenterX - current.getX();
+        double offsetY = blockY - current.getY();
+        double offsetZ = targetCenterZ - current.getZ();
+        if (collidesAtOffset(entity, offsetX, offsetY, offsetZ)) {
+            return false;
+        }
+        return hasSupportAtOffset(entity, offsetX, offsetY, offsetZ) || isWaterSurfaceBlock(below);
+    }
+
+    private List<PathNode> findPathNeighbors(Entity entity, PathNode node, PathNode start, int maxSearchRadius) {
+        List<PathNode> neighbors = new ArrayList<>(8);
+        for (int offsetX = -1; offsetX <= 1; offsetX++) {
+            for (int offsetZ = -1; offsetZ <= 1; offsetZ++) {
+                if (offsetX == 0 && offsetZ == 0) {
+                    continue;
+                }
+                int nextX = node.x + offsetX;
+                int nextZ = node.z + offsetZ;
+                if (Math.abs(nextX - start.x) > maxSearchRadius || Math.abs(nextZ - start.z) > maxSearchRadius) {
+                    continue;
+                }
+                PathNode neighbor = findNearestWalkableNode(entity, nextX, node.y, nextZ, 1);
+                if (neighbor == null || Math.abs(neighbor.y - node.y) > 1) {
+                    continue;
+                }
+                neighbors.add(neighbor);
+            }
+        }
+        return neighbors;
+    }
+
+    private double movementCost(PathNode from, PathNode to) {
+        boolean diagonal = from.x != to.x && from.z != to.z;
+        return (diagonal ? 1.41421356237D : 1D) + Math.abs(to.y - from.y) * 0.35D;
+    }
+
+    private double estimatePathCost(PathNode current, PathNode goal) {
+        double deltaX = goal.x - current.x;
+        double deltaZ = goal.z - current.z;
+        double deltaY = Math.abs(goal.y - current.y);
+        return Math.sqrt(deltaX * deltaX + deltaZ * deltaZ) + deltaY * 0.35D;
+    }
+
+    private List<PathNode> buildPathNodes(PathRecord end) {
+        List<PathNode> nodes = new ArrayList<>();
+        PathRecord current = end;
+        while (current != null) {
+            nodes.add(0, current.node);
+            current = current.parent;
+        }
+        if (!nodes.isEmpty()) {
+            nodes.remove(0);
+        }
+        return nodes;
+    }
+
+    private Location toAutoTravelNodeLocation(World world, PathNode node) {
+        return new Location(world, node.x + 0.5D, node.y, node.z + 0.5D);
+    }
+
+    private Location resolveAutoTravelTargetLocation(Entity entity, AutoTravelState state, boolean flyingPet) {
+        World world = entity.getWorld();
+        int blockX = (int) Math.floor(state.targetX());
+        int blockZ = (int) Math.floor(state.targetZ());
+        double groundY = world.getHighestBlockYAt(blockX, blockZ) + 1.0D;
+        double targetY = flyingPet ? resolveFlyingAutoTravelTargetY(entity, state, groundY) : groundY;
+        return new Location(world, state.targetX(), targetY, state.targetZ());
+    }
+
+    private double resolveFlyingAutoTravelTargetY(Entity entity, AutoTravelState state, double groundY) {
+        Location current = entity.getLocation();
+        double highestAlongRoute = sampleHighestBlockYAlongRoute(entity.getWorld(), current.getX(), current.getZ(), state.targetX(), state.targetZ());
+        double safetyClearance = Math.max(3.0D, entity.getHeight() + 2.0D);
+        return Math.max(current.getY(), highestAlongRoute + safetyClearance);
+    }
+
+    private double sampleHighestBlockYAlongRoute(World world, double startX, double startZ, double targetX, double targetZ) {
+        double deltaX = targetX - startX;
+        double deltaZ = targetZ - startZ;
+        int steps = Math.max(1, (int) Math.ceil(Math.max(Math.abs(deltaX), Math.abs(deltaZ))));
+        double highest = Double.NEGATIVE_INFINITY;
+        for (int step = 0; step <= steps; step++) {
+            double progress = step / (double) steps;
+            double sampleX = startX + deltaX * progress;
+            double sampleZ = startZ + deltaZ * progress;
+            highest = Math.max(highest, world.getHighestBlockYAt((int) Math.floor(sampleX), (int) Math.floor(sampleZ)));
+        }
+        return highest == Double.NEGATIVE_INFINITY ? world.getMinHeight() : highest + 1.0D;
+    }
+
+    private void faceTowards(Entity entity, Location targetLocation) {
+        Vector direction = targetLocation.toVector().subtract(entity.getLocation().toVector()).setY(0D);
+        if (direction.lengthSquared() <= 1.0E-6D) {
+            return;
+        }
+        float yaw = (float) Math.toDegrees(Math.atan2(-direction.getX(), direction.getZ()));
+        entity.setRotation(yaw, entity.getLocation().getPitch());
+    }
+
+    private void handleAutoTravelDefendOwner(Player owner, Pet pet, Entity entity, AutoTravelState state) {
+        if (!canPetDefendOwnerDuringAutoTravel(pet)) {
+            return;
+        }
+        long currentTick = plugin.getServer().getCurrentTick();
+        if (currentTick - state.lastAttackTick < 20L) {
+            return;
+        }
+        Mob threat = findNearestThreateningMob(owner, entity, 8.0D);
+        if (threat == null || entity.getLocation().distanceSquared(threat.getLocation()) > 6.25D) {
+            return;
+        }
+        threat.damage(resolveAutoTravelAttackDamage(entity), entity);
+        state.lastAttackTick = currentTick;
+    }
+
+    private Mob findNearestThreateningMob(Player owner, Entity entity, double radius) {
+        Mob nearest = null;
+        double nearestDistanceSquared = Double.MAX_VALUE;
+        for (Entity nearby : owner.getNearbyEntities(radius, radius, radius)) {
+            if (!(nearby instanceof Mob mob) || mob.isDead() || !mob.isValid()) {
+                continue;
+            }
+            LivingEntity target = mob.getTarget();
+            if (target == null || !target.getUniqueId().equals(owner.getUniqueId())) {
+                continue;
+            }
+            double distanceSquared = entity.getLocation().distanceSquared(mob.getLocation());
+            if (distanceSquared < nearestDistanceSquared) {
+                nearest = mob;
+                nearestDistanceSquared = distanceSquared;
+            }
+        }
+        return nearest;
+    }
+
+    private double resolveAutoTravelAttackDamage(Entity entity) {
+        if (entity instanceof Wither) {
+            return 8.0D;
+        }
+        if (entity instanceof Llama) {
+            return 4.0D;
+        }
+        return 4.0D;
+    }
+
+    private boolean isWaterSurfaceBlock(Block block) {
+        Material material = block.getType();
+        return material == Material.WATER || material == Material.KELP
+                || material == Material.KELP_PLANT || material == Material.SEAGRASS || material == Material.TALL_SEAGRASS;
+    }
+
+    private boolean collidesAtOffset(Entity entity, double offsetX, double offsetY, double offsetZ) {
+        BoundingBox movedBox = entity.getBoundingBox().shift(offsetX, offsetY, offsetZ);
+        World world = entity.getWorld();
+        int minX = (int) Math.floor(movedBox.getMinX());
+        int maxX = (int) Math.floor(movedBox.getMaxX() - 1.0E-6D);
+        int minY = (int) Math.floor(movedBox.getMinY());
+        int maxY = (int) Math.floor(movedBox.getMaxY() - 1.0E-6D);
+        int minZ = (int) Math.floor(movedBox.getMinZ());
+        int maxZ = (int) Math.floor(movedBox.getMaxZ() - 1.0E-6D);
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    Block block = world.getBlockAt(x, y, z);
+                    if (!block.isPassable()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean collidesAhead(Entity entity, Vector horizontalMovement, double offsetY) {
+        Vector horizontal = horizontalMovement.clone().setY(0D);
+        if (horizontal.lengthSquared() <= 1.0E-6D) {
+            return false;
+        }
+        Vector direction = horizontal.normalize();
+        double probeDistance = Math.max(entity.getWidth() * 0.5D + 0.45D, Math.min(1.25D, horizontalMovement.length() + entity.getWidth() * 0.5D));
+        return collidesAtOffset(entity, direction.getX() * probeDistance, offsetY, direction.getZ() * probeDistance);
+    }
+
+    private boolean hasSupportAtOffset(Entity entity, double offsetX, double offsetY, double offsetZ) {
+        BoundingBox movedBox = entity.getBoundingBox().shift(offsetX, offsetY, offsetZ);
+        World world = entity.getWorld();
+        double centerX = (movedBox.getMinX() + movedBox.getMaxX()) * 0.5D;
+        double centerZ = (movedBox.getMinZ() + movedBox.getMaxZ()) * 0.5D;
+        int blockX = (int) Math.floor(centerX);
+        int blockY = (int) Math.floor(movedBox.getMinY() - 0.05D);
+        int blockZ = (int) Math.floor(centerZ);
+        return !world.getBlockAt(blockX, blockY, blockZ).isPassable();
+    }
+
+    private Location getFollowLocation(Player player, Pet pet, Entity entity, boolean flyingPet) {
         Location baseLocation = player.getLocation().clone();
         List<Pet> visiblePets = getPets(player).stream()
                 .filter(Pet::show)
@@ -1593,9 +2181,32 @@ public class PetManger {
             }
         }
 
-        double angle = (Math.PI * 2D * slotIndex) / visibleCount;
-        double xOffset = Math.cos(angle) * FOLLOW_SLOT_RADIUS;
-        double zOffset = Math.sin(angle) * FOLLOW_SLOT_RADIUS;
+        Vector moveDirection = player.getVelocity().clone().setY(0D);
+        double xOffset;
+        double zOffset;
+        if (moveDirection.lengthSquared() > 1.0E-4D) {
+            moveDirection.normalize();
+            Vector backDirection = moveDirection.clone().multiply(-1D);
+            Vector sideDirection = new Vector(-moveDirection.getZ(), 0D, moveDirection.getX());
+            double lateralOffset = visibleCount <= 1 ? 0D : (slotIndex - (visibleCount - 1) / 2.0D) * 0.9D;
+            Vector combinedOffset = backDirection.multiply(FOLLOW_SLOT_RADIUS).add(sideDirection.multiply(lateralOffset));
+            xOffset = combinedOffset.getX();
+            zOffset = combinedOffset.getZ();
+        } else {
+            Vector fallbackDirection = entity == null
+                    ? new Vector(0D, 0D, 1D)
+                    : entity.getLocation().toVector().subtract(player.getLocation().toVector()).setY(0D);
+            if (fallbackDirection.lengthSquared() <= 1.0E-6D) {
+                fallbackDirection = new Vector(0D, 0D, 1D);
+            } else {
+                fallbackDirection.normalize();
+            }
+            Vector sideDirection = new Vector(-fallbackDirection.getZ(), 0D, fallbackDirection.getX());
+            double lateralOffset = visibleCount <= 1 ? 0D : (slotIndex - (visibleCount - 1) / 2.0D) * 0.8D;
+            Vector combinedOffset = fallbackDirection.multiply(FOLLOW_SLOT_RADIUS).add(sideDirection.multiply(lateralOffset));
+            xOffset = combinedOffset.getX();
+            zOffset = combinedOffset.getZ();
+        }
         baseLocation.add(xOffset, 0D, zOffset);
         if (flyingPet) {
             baseLocation.setY(player.getLocation().getY() + FLYING_FOLLOW_HEIGHT);
@@ -1618,6 +2229,12 @@ public class PetManger {
         Location location = entity.getLocation().clone().add(0, Math.max(0.7D, entity.getHeight() * 0.7D), 0);
         entity.getWorld().spawnParticle(Particle.ANGRY_VILLAGER, location, 1, 0.08D, 0.08D, 0.08D, 0D);
         entity.getWorld().spawnParticle(Particle.SMOKE, location, 1, 0.15D, 0.15D, 0.15D, 0.01D);
+    }
+
+    private void spawnAutoTravelConfusedParticles(Entity entity) {
+        Location location = entity.getLocation().clone().add(0, Math.max(0.8D, entity.getHeight() * 0.8D), 0);
+        entity.getWorld().spawnParticle(Particle.CLOUD, location, 6, 0.18D, 0.12D, 0.18D, 0.01D);
+        entity.getWorld().spawnParticle(Particle.SMOKE, location, 3, 0.12D, 0.08D, 0.12D, 0.01D);
     }
 
     private void playBathEffect(Entity entity) {
@@ -1735,6 +2352,9 @@ public class PetManger {
     }
 
     private boolean isFlyingPet(Pet pet, Entity entity) {
+        if (canPetFly(pet)) {
+            return true;
+        }
         if (entity instanceof TextDisplay && pet != null) {
             PetConfig petConfig = plugin.getPetConfigManger().pets.get(pet.type());
             if (petConfig != null) {
@@ -2214,6 +2834,59 @@ public class PetManger {
                 pet.owner(),
                 entity
         );
+    }
+
+    private static final class AutoTravelState {
+
+        private final long petId;
+        private final double targetX;
+        private final double targetZ;
+        private long lastAttackTick;
+        private long stuckTicks;
+        private long lastBlockedNotifyTick;
+        private Location lastCheckedLocation;
+        private UUID pathWorldUid;
+        private int pathTargetBlockX = Integer.MIN_VALUE;
+        private int pathTargetBlockZ = Integer.MIN_VALUE;
+        private int pathIndex;
+        private List<PathNode> pathNodes = List.of();
+
+        private AutoTravelState(long petId, double targetX, double targetZ) {
+            this.petId = petId;
+            this.targetX = targetX;
+            this.targetZ = targetZ;
+        }
+
+        private long petId() {
+            return petId;
+        }
+
+        private double targetX() {
+            return targetX;
+        }
+
+        private double targetZ() {
+            return targetZ;
+        }
+    }
+
+    private record PathNode(int x, int y, int z) {
+    }
+
+    private static final class PathRecord {
+
+        private final PathNode node;
+        private final PathRecord parent;
+        private final double gScore;
+        private final double fScore;
+        private boolean closed;
+
+        private PathRecord(PathNode node, PathRecord parent, double gScore, double fScore) {
+            this.node = node;
+            this.parent = parent;
+            this.gScore = gScore;
+            this.fScore = fScore;
+        }
     }
 
     private record BlindBoxRevealInteraction(UUID ownerUuid, long petId, UUID interactionEntityUuid) {

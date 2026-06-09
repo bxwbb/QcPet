@@ -12,7 +12,7 @@ softdepend:
 commands:
   qcpet:
     description: QcPet main command
-    usage: /<command> [help|list|select|show [player] <id|*>|hide [player] <id|*>|showdisplay [player] <id|*>|hidedisplay [player] <id|*>|bath <id|*>|feed <id|*>|info [player] <id|*>|reload|give [player] <pet>|remove [player] <id|*>|addexp [player] <id|*> <amount>|addlevel [player] <id|*> <amount>|storage]
+    usage: /<command> [help|list|select|show [player] <id|*>|hide [player] <id|*>|showdisplay [player] <id|*>|hidedisplay [player] <id|*>|bath <id|*>|feed <id|*>|info [player] <id|*>|reload|give [player] <pet>|remove [player] <id|*>|addexp [player] <id|*> <amount>|addlevel [player] <id|*> <amount>|rename <player> <id> <name>|storage]
     aliases:
       - pet
       - pets
@@ -53,6 +53,7 @@ permissions:
       qcpet.command.remove: true
       qcpet.command.addexp: true
       qcpet.command.addlevel: true
+      qcpet.command.rename: true
       qcpet.command.storage: true
       qcpet.command.show.other: true
       qcpet.command.hide.other: true
@@ -144,6 +145,10 @@ permissions:
 
   qcpet.command.addlevel:
     description: 允许给宠物增加等级。
+    default: op
+
+  qcpet.command.rename:
+    description: 允许重命名任意玩家的宠物。
     default: op
 
   qcpet.command.storage:

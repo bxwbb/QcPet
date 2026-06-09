@@ -7,6 +7,7 @@ import org.bxwbb.qcpet.event.LoadSaveEvent;
 import org.bxwbb.qcpet.event.PetProtectionListener;
 import org.bxwbb.qcpet.gui.GuiManager;
 import org.bxwbb.qcpet.pet.PetConfigManger;
+import org.bxwbb.qcpet.pet.PetBackpackService;
 import org.bxwbb.qcpet.pet.PetManger;
 import org.bxwbb.qcpet.pet.PetProgressService;
 import org.bxwbb.qcpet.pet.QcPetPlaceholderExpansion;
@@ -28,6 +29,7 @@ public class QcPet extends JavaPlugin {
     private GuiManager guiManager;
     private PetConfigManger petConfigManger;
     private PetProgressService petProgressService;
+    private PetBackpackService petBackpackService;
 
     @Override
     public void onEnable() {
@@ -48,6 +50,7 @@ public class QcPet extends JavaPlugin {
         readConfig();
         petConfigManger = new PetConfigManger(this);
         petProgressService = new PetProgressService(petConfigManger);
+        petBackpackService = new PetBackpackService(this);
         new LoadSaveEvent(this);
         new PetProtectionListener(this);
         new QcPetCommand(this);
@@ -164,5 +167,9 @@ public class QcPet extends JavaPlugin {
 
     public PetProgressService getPetProgressService() {
         return petProgressService;
+    }
+
+    public PetBackpackService getPetBackpackService() {
+        return petBackpackService;
     }
 }

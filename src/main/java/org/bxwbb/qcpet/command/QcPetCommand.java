@@ -41,6 +41,7 @@ public class QcPetCommand implements TabExecutor {
             "remove",
             "addexp",
             "addlevel",
+            "rename",
             "storage"
     );
     private static final List<String> TARGET_PLAYER_COMMANDS = List.of(
@@ -48,6 +49,7 @@ public class QcPetCommand implements TabExecutor {
             "remove",
             "addexp",
             "addlevel",
+            "rename",
             "show",
             "hide",
             "info",
@@ -91,6 +93,7 @@ public class QcPetCommand implements TabExecutor {
                 case "remove" -> handleRemove(sender, subArgs);
                 case "addexp" -> handleAddExp(sender, subArgs);
                 case "addlevel" -> handleAddLevel(sender, subArgs);
+                case "rename" -> handleRename(sender, subArgs);
                 case "storage" -> handleStorage(sender);
                 default -> {
                     sender.sendMessage(error("未知子命令，请使用 /" + label + " help 查看帮助。"));
@@ -134,6 +137,7 @@ public class QcPetCommand implements TabExecutor {
             if ((subCommand.equals("remove")
                     || subCommand.equals("addexp")
                     || subCommand.equals("addlevel")
+                    || subCommand.equals("rename")
                     || subCommand.equals("info")
                     || subCommand.equals("show")
                     || subCommand.equals("hide")
@@ -168,6 +172,7 @@ public class QcPetCommand implements TabExecutor {
         send(sender, "&e/qcpet remove [玩家] <宠物ID|*> &7- 删除宠物");
         send(sender, "&e/qcpet addexp [玩家] <宠物ID|*> <数值> &7- 增加宠物经验");
         send(sender, "&e/qcpet addlevel [玩家] <宠物ID|*> <数值> &7- 增加宠物等级");
+        send(sender, "&e/qcpet rename <player> <petId> <newName> &7- Rename any player's pet");
         send(sender, "&e/qcpet reload &7- 重载配置");
         send(sender, "&e/qcpet storage &7- 查看存储状态");
         return true;
@@ -670,6 +675,58 @@ public class QcPetCommand implements TabExecutor {
         return true;
     }
 
+    private boolean handleRename(CommandSender sender, String[] args) {
+        if (!hasPermission(sender, "qcpet.command.rename")) {
+            return true;
+        }
+        if (args.length < 3) {
+            sender.sendMessage(error("Usage: /qcpet rename <player> <petId> <newName>"));
+            return true;
+        }
+
+        Player target = requireOnlinePlayer(sender, args[0]);
+        if (target == null) {
+            return true;
+        }
+        Long petId = requirePetId(sender, args, 1);
+        if (petId == null) {
+            return true;
+        }
+
+        String newName = String.join(" ", Arrays.copyOfRange(args, 2, args.length)).trim();
+        String normalizedName = plugin.getPetManger().normalizePetName(newName);
+        if (normalizedName.isEmpty()) {
+            sender.sendMessage(error("名称不能为空。"));
+            return true;
+        }
+
+        int maxLength = plugin.getConfig().getInt("pet.rename.max-length", 32);
+        if (normalizedName.length() > maxLength) {
+            sender.sendMessage(error("名称过长，最多 " + maxLength + " 个字符。"));
+            return true;
+        }
+
+        String invalidPattern = plugin.getConfig().getString("pet.rename.invalid-pattern", "[\\r\\n\\t]");
+        if (containsInvalidCharacters(newName, invalidPattern)) {
+            sender.sendMessage(error("名称包含非法字符。"));
+            return true;
+        }
+
+        plugin.getPetManger().renamePetAsync(target, petId, newName)
+                .whenComplete((pet, throwable) -> {
+                    if (throwable != null) {
+                        sender.sendMessage(error("命令执行失败: " + throwable.getMessage()));
+                        return;
+                    }
+                    if (pet == null) {
+                        sender.sendMessage(error("未找到宠物，ID: " + petId));
+                        return;
+                    }
+                    sender.sendMessage(success("已重命名 " + target.getName() + " 的宠物，ID: " + petId));
+                });
+        return true;
+    }
+
     private boolean handleStorage(CommandSender sender) {
         if (!hasPermission(sender, "qcpet.command.storage")) {
             return true;
@@ -942,9 +999,18 @@ public class QcPetCommand implements TabExecutor {
                 || subCommand.equalsIgnoreCase("remove")
                 || subCommand.equalsIgnoreCase("addexp")
                 || subCommand.equalsIgnoreCase("addlevel")
+                || subCommand.equalsIgnoreCase("rename")
                 || subCommand.equalsIgnoreCase("bath")
                 || subCommand.equalsIgnoreCase("feed")
                 || subCommand.equalsIgnoreCase("info");
+    }
+
+    private static boolean containsInvalidCharacters(String value, String invalidPattern) {
+        try {
+            return java.util.regex.Pattern.compile(invalidPattern).matcher(value).find();
+        } catch (java.util.regex.PatternSyntaxException ignored) {
+            return false;
+        }
     }
 
     private List<String> getPetIds(Player player) {

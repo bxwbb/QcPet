@@ -3,7 +3,12 @@ default:
   displayName: "%qcpet_key%"
   rarity: "&a稀有"
   rideable: true
+  waterFloat: false
+  flyable: false
+  autoTravelDefendOwner: false
   movable: true
+  movementMultiplier: 1.0
+  backpackMaxSlots: 54
   modelId: ""
   times: 1
   saveEntityData: false
@@ -66,6 +71,7 @@ defaultAdd:
 pets:
   bee:
     type: BEE
+    movementMultiplier: 0.92
     displayName: "&e嗡嗡蜂"
     rarity: "&a常见"
     modelId: ""
@@ -84,6 +90,7 @@ pets:
 
   dog:
     type: WOLF
+    movementMultiplier: 1.08
     displayName: "&f守卫犬"
     rarity: "&b珍稀"
     modelId: ""
@@ -103,6 +110,7 @@ pets:
 
   vex:
     type: HAPPY_GHAST
+    movementMultiplier: 1.16
     displayName: "&b小乐魂"
     rarity: "&d史诗"
     modelId: ""
@@ -119,6 +127,7 @@ pets:
 
   creeper:
     type: CREEPER
+    movementMultiplier: 1.16
     displayName: "&a苦力怕宝宝"
     rarity: "&d史诗"
     modelId: ""
@@ -137,6 +146,7 @@ pets:
 
   baby_zombie:
     type: ZOMBIE
+    movementMultiplier: 1.08
     displayName: "&2小僵尸"
     rarity: "&b珍稀"
     modelId: ""
@@ -154,6 +164,8 @@ pets:
 
   cat:
     type: CAT
+    movementMultiplier: 1.0
+    autoTravelDefendOwner: true
     displayName: "&d小猫咪"
     rarity: "&a稀有"
     modelId: ""
@@ -171,6 +183,7 @@ pets:
 
   rabbit:
     type: RABBIT
+    movementMultiplier: 1.0
     displayName: "&f小兔子"
     rarity: "&a稀有"
     modelId: ""
@@ -188,6 +201,7 @@ pets:
 
   fox:
     type: FOX
+    movementMultiplier: 1.08
     displayName: "&6小狐狸"
     rarity: "&b珍稀"
     modelId: ""
@@ -205,6 +219,7 @@ pets:
 
   frog:
     type: FROG
+    movementMultiplier: 1.0
     displayName: "&a小青蛙"
     rarity: "&a稀有"
     modelId: ""
@@ -221,6 +236,7 @@ pets:
 
   panda:
     type: PANDA
+    movementMultiplier: 1.16
     displayName: "&f团子熊猫"
     rarity: "&d史诗"
     modelId: ""
@@ -238,6 +254,7 @@ pets:
 
   parrot:
     type: PARROT
+    movementMultiplier: 1.08
     displayName: "&b鹦鹉伙伴"
     rarity: "&b珍稀"
     modelId: ""
@@ -254,6 +271,8 @@ pets:
 
   allay:
     type: ALLAY
+    flyable: true
+    movementMultiplier: 1.25
     displayName: "&b悦灵精灵"
     rarity: "&6传奇"
     modelId: ""
@@ -270,6 +289,7 @@ pets:
 
   chicken:
     type: CHICKEN
+    movementMultiplier: 0.85
     displayName: "&f小鸡仔"
     rarity: "&7普通"
     modelId: ""
@@ -287,6 +307,7 @@ pets:
 
   cow:
     type: COW
+    movementMultiplier: 1.0
     displayName: "&f小奶牛"
     rarity: "&a稀有"
     modelId: ""
@@ -304,6 +325,7 @@ pets:
 
   pig:
     type: PIG
+    movementMultiplier: 0.85
     displayName: "&d小猪猪"
     rarity: "&7普通"
     modelId: ""
@@ -321,6 +343,7 @@ pets:
 
   sheep:
     type: SHEEP
+    movementMultiplier: 0.85
     displayName: "&f小绵羊"
     rarity: "&7普通"
     modelId: ""
@@ -338,6 +361,7 @@ pets:
 
   llama:
     type: LLAMA
+    movementMultiplier: 1.0
     saveEntityData: true
     displayName: "&6羊驼伙伴"
     modelId: ""
@@ -355,6 +379,7 @@ pets:
 
   axolotl:
     type: AXOLOTL
+    movementMultiplier: 1.16
     displayName: "&d美西螈"
     rarity: "&d史诗"
     modelId: ""
@@ -369,24 +394,11 @@ pets:
       on-spawn:
         - "[message] &d美西螈欢快地游到了你身边"
 
-  player_pet:
-    type: PLAYER
-    displayName: "&6分身伙伴"
-    rarity: "&6传奇"
-    modelId: ""
-    times: 1.0
-    scaleRequirement: "1 + (%2% * 0.015)"
-    expPerMinute: 5
-    bathRewardExp: 30
-    feedRewardExp: 20
-    levelExpRequirement: "160 + (%1% * 35)"
-    metaData: {}
-    events:
-      on-spawn:
-        - "[message] &6玩家宠物已出战，可用于玩家模型类外观"
-
   wither:
     type: WITHER
+    flyable: true
+    movementMultiplier: 1.4
+    autoTravelDefendOwner: true
     displayName: "&8迷你凋零"
     rarity: "&6传奇"
     modelId: ""

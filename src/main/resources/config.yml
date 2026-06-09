@@ -15,6 +15,7 @@ pet:
     ground-speed: 0.55
     flying-speed: 0.45
     flying-vertical-speed: 0.2
+    flying-glide-factor: 0.35
     flying-max-height: 5.0
   tutorial:
     enabled: true
@@ -28,3 +29,6 @@ pet:
   feed:
     min-times-per-day: 3
     max-times-per-day: 5
+  backpack:
+    base-slots: 9
+    slots-per-level: 1
