@@ -741,18 +741,18 @@ public class QcPetCommand implements TabExecutor {
 
     private Integer requireNonNegativeAmount(CommandSender sender, String value, String name) {
         if (value == null || value.isBlank()) {
-            sender.sendMessage(error("????? + name + "?????));
+            sender.sendMessage(error(name + " is required."));
             return null;
         }
         try {
             int amount = Integer.parseInt(value);
             if (amount < 0) {
-                sender.sendMessage(error(name + "????????? 0??));
+                sender.sendMessage(error(name + " must be greater than or equal to 0."));
                 return null;
             }
             return amount;
         } catch (NumberFormatException exception) {
-            sender.sendMessage(error(name + "?????????????));
+            sender.sendMessage(error(name + " must be a number."));
             return null;
         }
     }
