@@ -30,14 +30,11 @@ public record PetConfig(
 ) {
 
     public Pet toPet(long id, Player owner) {
-        return toPet(id, owner, 0, false);
+        return toPet(id, owner, 0);
     }
 
-    public Pet toPet(long id, Player owner, int level, boolean blindBoxRevealPending) {
+    public Pet toPet(long id, Player owner, int level) {
         Map<String, Object> petData = metaData == null ? new LinkedHashMap<>() : new LinkedHashMap<>(metaData);
-        if (blindBoxRevealPending) {
-            petData.put("blindBoxRevealPending", true);
-        }
         return new Pet(
                 id,
                 name,

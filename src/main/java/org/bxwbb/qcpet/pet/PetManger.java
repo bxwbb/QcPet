@@ -208,8 +208,7 @@ public class PetManger {
         if (initialLevel < 0) {
             throw new IllegalArgumentException("initialLevel cannot be less than 0");
         }
-        boolean keepClickToRevealState = initialLevel == 1;
-        return petConfig.toPet(plugin.getPetUtil().nextPetId(), player, initialLevel, keepClickToRevealState);
+        return petConfig.toPet(plugin.getPetUtil().nextPetId(), player, initialLevel);
     }
 
     public void addPet(Player player, Pet pet) {
