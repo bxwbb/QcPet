@@ -15,7 +15,7 @@ pet:
     ground-speed: 0.55
     flying-speed: 0.45
     flying-vertical-speed: 0.2
-    flying-glide-factor: 0.35
+    flying-glide-factor: 0.6
     flying-max-height: 5.0
   tutorial:
     enabled: true

@@ -1066,6 +1066,7 @@ public class PetManger {
                     }
                     continue;
                 }
+                syncBossEntityState(entity);
                 Pet updatedPet = applyEntityState(player, pet, entity);
                 if (updatedPet != pet) {
                     replacePet(player, updatedPet);
@@ -1126,9 +1127,7 @@ public class PetManger {
         if (entity instanceof LivingEntity livingEntity) {
             livingEntity.setCollidable(false);
         }
-        if (entity instanceof Boss boss) {
-            hideBossBar(boss);
-        }
+        syncBossEntityState(entity);
         if (entity instanceof Player playerEntity && playerEntity != player) {
             playerEntity.setInvulnerable(true);
             playerEntity.setCollidable(false);
@@ -1147,12 +1146,19 @@ public class PetManger {
             creeper.setMaxFuseTicks(Integer.MAX_VALUE);
             creeper.setExplosionRadius(0);
         }
+        applyPetDataToEntity(updatedPet, entity);
+        return captureEntityStateIfNecessary(updatedPet, entity);
+    }
+
+    private void syncBossEntityState(Entity entity) {
+        if (!(entity instanceof Boss boss)) {
+            return;
+        }
+        hideBossBar(boss);
         if (entity instanceof Wither wither) {
             wither.setInvulnerableTicks(0);
             wither.setGlowing(false);
         }
-        applyPetDataToEntity(updatedPet, entity);
-        return captureEntityStateIfNecessary(updatedPet, entity);
     }
 
     private void hideBossBar(Boss boss) {
