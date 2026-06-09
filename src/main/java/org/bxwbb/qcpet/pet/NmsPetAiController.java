@@ -74,6 +74,10 @@ public final class NmsPetAiController {
     }
 
     public static void moveGroundPet(Mob mob, Location targetLocation) {
+        moveGroundPet(mob, targetLocation, GROUND_SPEED);
+    }
+
+    public static void moveGroundPet(Mob mob, Location targetLocation, double speed) {
         try {
             Object handle = CRAFT_MOB_GET_HANDLE.invoke(mob);
             Object navigation = MOB_GET_NAVIGATION.invoke(handle);
@@ -83,7 +87,7 @@ public final class NmsPetAiController {
                     targetLocation.getX(),
                     targetLocation.getY(),
                     targetLocation.getZ(),
-                    GROUND_SPEED
+                    speed
             );
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("Failed to move ground pet via NMS", exception);
@@ -91,6 +95,10 @@ public final class NmsPetAiController {
     }
 
     public static void moveFlyingPet(Mob mob, Location targetLocation) {
+        moveFlyingPet(mob, targetLocation, -1D);
+    }
+
+    public static void moveFlyingPet(Mob mob, Location targetLocation, double speedOverride) {
         try {
             Object handle = CRAFT_MOB_GET_HANDLE.invoke(mob);
             Object navigation = MOB_GET_NAVIGATION.invoke(handle);
@@ -99,12 +107,13 @@ public final class NmsPetAiController {
             double distanceSquared = currentLocation.distanceSquared(targetLocation);
             MOB_SET_TARGET.invoke(handle, new Object[]{null});
             NAVIGATION_STOP.invoke(navigation);
+            double speed = speedOverride > 0D ? speedOverride : resolveFlyingSpeed(distanceSquared);
             MOVE_CONTROL_SET_WANTED_POSITION.invoke(
                     moveControl,
                     targetLocation.getX(),
                     targetLocation.getY(),
                     targetLocation.getZ(),
-                    resolveFlyingSpeed(distanceSquared)
+                    speed
             );
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("Failed to move flying pet via NMS", exception);

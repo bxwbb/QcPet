@@ -1,10 +1,10 @@
 name: QcPet
-version: '${project.version}'
+version: ${version}
 main: org.bxwbb.qcpet.QcPet
-api-version: '1.21'
+api-version: "1.21"
 author: BXWBB
 description: 一个高度可配置的跨服宠物插件
-website: https://github.com/bxwbb/QcPet
+website: https://github.com/BXWBB/QcPet
 softdepend:
   - PlaceholderAPI
   - QcLevel
@@ -12,7 +12,7 @@ softdepend:
 commands:
   qcpet:
     description: QcPet main command
-    usage: /<command> [help|list|select|show [player] <id|*>|hide [player] <id|*>|bath|feed|info|reload|give [player] <pet>|remove [player] <id>|addexp [player] <id> <amount>|addlevel [player] <id> <amount>|storage]
+    usage: /<command> [help|list|select|show [player] <id|*>|hide [player] <id|*>|showdisplay [player] <id|*>|hidedisplay [player] <id|*>|bath <id|*>|feed <id|*>|info [player] <id|*>|reload|give [player] <pet>|remove [player] <id|*>|addexp [player] <id|*> <amount>|addlevel [player] <id|*> <amount>|storage]
     aliases:
       - pet
       - pets
@@ -37,6 +37,8 @@ permissions:
       qcpet.command.select: true
       qcpet.command.show: true
       qcpet.command.hide: true
+      qcpet.command.showdisplay: true
+      qcpet.command.hidedisplay: true
       qcpet.command.bath: true
       qcpet.command.feed: true
       qcpet.command.info: true
@@ -54,6 +56,9 @@ permissions:
       qcpet.command.storage: true
       qcpet.command.show.other: true
       qcpet.command.hide.other: true
+      qcpet.command.info.other: true
+      qcpet.command.showdisplay.other: true
+      qcpet.command.hidedisplay.other: true
       qcpet.bypass.limit: true
       qcpet.bypass.world: true
 
@@ -89,6 +94,22 @@ permissions:
     description: 允许隐藏其他玩家的宠物。
     default: op
 
+  qcpet.command.showdisplay:
+    description: 允许仅恢复自己的宠物显示。
+    default: true
+
+  qcpet.command.showdisplay.other:
+    description: 允许仅恢复其他玩家的宠物显示。
+    default: op
+
+  qcpet.command.hidedisplay:
+    description: 允许仅隐藏自己的宠物显示。
+    default: true
+
+  qcpet.command.hidedisplay.other:
+    description: 允许仅隐藏其他玩家的宠物显示。
+    default: op
+
   qcpet.command.bath:
     description: 允许给宠物洗澡。
     default: true
@@ -100,6 +121,10 @@ permissions:
   qcpet.command.info:
     description: 允许查看宠物信息。
     default: true
+
+  qcpet.command.info.other:
+    description: 允许查看其他玩家的宠物信息。
+    default: op
 
   qcpet.command.reload:
     description: 允许重载 QcPet 配置。

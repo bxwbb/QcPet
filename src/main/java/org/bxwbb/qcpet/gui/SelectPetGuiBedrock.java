@@ -1,19 +1,23 @@
 package org.bxwbb.qcpet.gui;
 
-import com.xigua.baseAPI.BaseAPI;
-import com.xigua.cumulus.form.SimpleForm;
-import com.xigua.cumulus.util.FormImage;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.InventoryHolder;
 import org.bxwbb.qcpet.QcPet;
 import org.bxwbb.qcpet.pet.Pet;
+import org.bxwbb.qcpet.pet.PetConfig;
+import org.geysermc.cumulus.form.SimpleForm;
+import org.geysermc.cumulus.util.FormImage;
+import org.geysermc.floodgate.api.FloodgateApi;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 public class SelectPetGuiBedrock implements SelectPetGui {
+
+    private static final int PAGE_SIZE = 18;
 
     private final QcPet plugin;
     private final SelectPetGuiJava fallbackJavaGui;
@@ -35,45 +39,37 @@ public class SelectPetGuiBedrock implements SelectPetGui {
 
     @Override
     public void open(Player player, int page) {
-        BaseAPI baseAPI = (BaseAPI) Bukkit.getPluginManager().getPlugin("BaseAPI");
-        if (baseAPI == null) {
+        if (!canUseFloodgateForms(player)) {
             fallbackJavaGui.open(player, page);
             return;
         }
 
         List<Pet> pets = new ArrayList<>(plugin.getPetManger().getPets(player));
-        int pageSize = 18;
-        int totalPages = Math.max(1, (int) Math.ceil(pets.size() / (double) pageSize));
+        int totalPages = Math.max(1, (int) Math.ceil(pets.size() / (double) PAGE_SIZE));
         int safePage = Math.max(0, Math.min(page, totalPages - 1));
+        int startIndex = safePage * PAGE_SIZE;
+        int petCountOnPage = Math.min(PAGE_SIZE, Math.max(0, pets.size() - startIndex));
+        boolean hasPrev = safePage > 0;
+        boolean hasNext = safePage + 1 < totalPages;
 
         SimpleForm.Builder builder = SimpleForm.builder()
                 .title("§6选择宠物")
-                .content("§7第 §f" + (safePage + 1) + "§7 / §f" + totalPages + " §7页\n§7点击宠物即可出战");
+                .content(buildPageContent(player, pets.size(), safePage, totalPages));
 
-        int startIndex = safePage * pageSize;
-        for (int index = 0; index < pageSize; index++) {
-            int petIndex = startIndex + index;
-            if (petIndex >= pets.size()) {
-                break;
-            }
-            Pet pet = pets.get(petIndex);
-            String label = buildPetButtonLabel(player, pet);
-            builder.button(label, FormImage.Type.PATH, "textures/items/name_tag");
+        for (int index = 0; index < petCountOnPage; index++) {
+            Pet pet = pets.get(startIndex + index);
+            builder.button(buildPetButtonLabel(player, pet), FormImage.Type.PATH, "textures/items/name_tag");
         }
 
-        if (safePage > 0) {
+        if (hasPrev) {
             builder.button("§e上一页", FormImage.Type.PATH, "textures/ui/arrow_left");
         }
-        if (safePage + 1 < totalPages) {
+        if (hasNext) {
             builder.button("§e下一页", FormImage.Type.PATH, "textures/ui/arrow_right");
         }
         builder.button("§8关闭", FormImage.Type.PATH, "textures/ui/realms_red_x");
 
-        int petCountOnPage = Math.min(pageSize, Math.max(0, pets.size() - startIndex));
-        boolean hasPrev = safePage > 0;
-        boolean hasNext = safePage + 1 < totalPages;
-
-        builder.validResultHandler((response) -> Bukkit.getScheduler().runTask(plugin, () -> {
+        builder.validResultHandler(response -> Bukkit.getScheduler().runTask(plugin, () -> {
             int clicked = response.clickedButtonId();
             if (clicked < petCountOnPage) {
                 selectPet(player, pets.get(startIndex + clicked));
@@ -88,15 +84,14 @@ public class SelectPetGuiBedrock implements SelectPetGui {
                 }
                 controlIndex--;
             }
-            if (hasNext) {
-                if (controlIndex == 0) {
-                    open(player, safePage + 1);
-                    return;
-                }
+            if (hasNext && controlIndex == 0) {
+                open(player, safePage + 1);
             }
         }));
 
-        baseAPI.sendForm(player.getUniqueId(), builder);
+        if (!FloodgateApi.getInstance().sendForm(player.getUniqueId(), builder)) {
+            fallbackJavaGui.open(player, page);
+        }
     }
 
     @Override
@@ -122,13 +117,55 @@ public class SelectPetGuiBedrock implements SelectPetGui {
                 });
     }
 
+    private String buildPageContent(Player player, int totalPets, int safePage, int totalPages) {
+        long shownCount = plugin.getPetManger().getPets(player).stream().filter(Pet::show).count();
+        return "§7第 §f" + (safePage + 1) + "§7 / §f" + totalPages + " §7页\n"
+                + "§7总宠物数: §f" + totalPets + "\n"
+                + "§7当前出战: §f" + shownCount + "\n"
+                + "§8点击任意宠物即可出战并打开详情面板";
+    }
+
     private String buildPetButtonLabel(Player player, Pet pet) {
         boolean blindBox = plugin.getPetManger().isBlindBoxPet(pet);
+        PetConfig petConfig = plugin.getPetConfigManger().pets.get(pet.type());
+        String rarity = resolveRarityText(petConfig);
         String type = blindBox ? "???" : pet.type();
         String level = blindBox ? "???" : String.valueOf(pet.level());
+        String state = pet.show() ? "§a已出战" : "§7未出战";
+        String multiplier = formatMultiplier(pet.times());
         return plugin.getPetManger().getDisplayName(pet, player)
                 + "\n§7ID: §f" + pet.id()
                 + "  §7Lv: §f" + level
-                + "  §7类型: §f" + type;
+                + "  §7类型: §f" + type
+                + "\n§7稀有度: " + rarity
+                + "  §7倍率: §f" + multiplier
+                + "  " + state;
+    }
+
+    private boolean canUseFloodgateForms(Player player) {
+        try {
+            FloodgateApi api = FloodgateApi.getInstance();
+            return api != null && api.isFloodgatePlayer(player.getUniqueId());
+        } catch (IllegalStateException exception) {
+            return false;
+        }
+    }
+
+    private static String resolveRarityText(PetConfig petConfig) {
+        String rarity = petConfig == null || petConfig.rarity() == null || petConfig.rarity().isBlank()
+                ? "&f普通"
+                : petConfig.rarity();
+        return rarity.replace('&', '§');
+    }
+
+    private static String formatMultiplier(double value) {
+        String formatted = String.format(Locale.US, "%.2f", value);
+        if (formatted.endsWith("00")) {
+            return formatted.substring(0, formatted.length() - 3);
+        }
+        if (formatted.endsWith("0")) {
+            return formatted.substring(0, formatted.length() - 1);
+        }
+        return formatted;
     }
 }

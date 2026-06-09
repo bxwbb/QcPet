@@ -12,9 +12,19 @@
       <option name="url" value="https://repo.maven.apache.org/maven2" />
     </remote-repository>
     <remote-repository>
+      <option name="id" value="fancyinnovations-releases" />
+      <option name="name" value="fancyinnovations-releases" />
+      <option name="url" value="https://maven.fancyspaces.net/fancyinnovations/releases" />
+    </remote-repository>
+    <remote-repository>
       <option name="id" value="papermc-repo" />
       <option name="name" value="papermc-repo" />
       <option name="url" value="https://repo.papermc.io/repository/maven-public/" />
+    </remote-repository>
+    <remote-repository>
+      <option name="id" value="opencollab-snapshots" />
+      <option name="name" value="opencollab-snapshots" />
+      <option name="url" value="https://repo.opencollab.dev/maven-snapshots/" />
     </remote-repository>
     <remote-repository>
       <option name="id" value="central" />
@@ -25,6 +35,21 @@
       <option name="id" value="jboss.community" />
       <option name="name" value="JBoss Community repository" />
       <option name="url" value="https://repository.jboss.org/nexus/content/repositories/public/" />
+    </remote-repository>
+    <remote-repository>
+      <option name="id" value="fancyinnovations-snapshots" />
+      <option name="name" value="fancyinnovations-snapshots" />
+      <option name="url" value="https://maven.fancyspaces.net/fancyinnovations/snapshots" />
+    </remote-repository>
+    <remote-repository>
+      <option name="id" value="papermc-snapshots" />
+      <option name="name" value="papermc-snapshots" />
+      <option name="url" value="https://artifactory.papermc.io/artifactory/snapshots" />
+    </remote-repository>
+    <remote-repository>
+      <option name="id" value="opencollab-releases" />
+      <option name="name" value="opencollab-releases" />
+      <option name="url" value="https://repo.opencollab.dev/main/" />
     </remote-repository>
   </component>
 </project>

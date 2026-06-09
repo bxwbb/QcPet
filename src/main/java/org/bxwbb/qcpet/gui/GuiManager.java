@@ -12,6 +12,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.InventoryHolder;
 import org.bxwbb.qcpet.QcPet;
 import org.bxwbb.qcpet.pet.Pet;
+import org.bxwbb.qcpet.pet.PetConfig;
 
 import java.util.UUID;
 
@@ -40,6 +41,10 @@ public class GuiManager implements Listener {
 
         Player player = event.getPlayer();
         Entity clickedEntity = event.getRightClicked();
+        if (plugin.getPetManger().handleBlindBoxRevealInteract(player, clickedEntity)) {
+            event.setCancelled(true);
+            return;
+        }
         Pet pet = plugin.getPetManger().getPetByEntity(clickedEntity);
         if (pet == null) {
             return;
@@ -59,6 +64,10 @@ public class GuiManager implements Listener {
         }
 
         event.setCancelled(true);
+        PetConfig petConfig = plugin.getPetConfigManger().pets.get(pet.type());
+        if (petConfig != null && !petConfig.rideable()) {
+            return;
+        }
         if (!clickedEntity.getPassengers().contains(player)) {
             clickedEntity.addPassenger(player);
         }

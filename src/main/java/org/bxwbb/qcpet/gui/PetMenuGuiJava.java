@@ -257,11 +257,15 @@ public class PetMenuGuiJava implements PetMenuGui {
         Material eggMaterial = blindBox ? Material.CHEST : resolveSpawnEggMaterial(petConfig);
         ItemStack itemStack = new ItemStack(eggMaterial);
         ItemMeta itemMeta = itemStack.getItemMeta();
+        String rarity = petConfig == null || petConfig.rarity() == null || petConfig.rarity().isBlank()
+                ? "&f普通"
+                : petConfig.rarity();
 
         int requiredExp = plugin.getPetProgressService().getRequiredExp(pet);
         String progressBar = plugin.getPetProgressService().buildProgressBar(pet, 18);
         boolean muted = plugin.getPetManger().isPetMuted(pet);
         List<Component> lore = new ArrayList<>();
+        lore.add(TextComponentUtil.legacy("&7稀有度: " + rarity));
         if (blindBox) {
             lore.add(TextComponentUtil.plain("等级: ???", NamedTextColor.GRAY));
             lore.add(TextComponentUtil.plain("经验: " + pet.exp() + " / " + requiredExp, NamedTextColor.GRAY));

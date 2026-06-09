@@ -1,9 +1,5 @@
 package org.bxwbb.qcpet.gui;
 
-import com.xigua.baseAPI.BaseAPI;
-import com.xigua.cumulus.form.CustomForm;
-import com.xigua.cumulus.form.SimpleForm;
-import com.xigua.cumulus.util.FormImage;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -12,6 +8,13 @@ import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bxwbb.qcpet.QcPet;
 import org.bxwbb.qcpet.pet.Pet;
+import org.bxwbb.qcpet.pet.PetConfig;
+import org.geysermc.cumulus.form.CustomForm;
+import org.geysermc.cumulus.form.SimpleForm;
+import org.geysermc.cumulus.util.FormImage;
+import org.geysermc.floodgate.api.FloodgateApi;
+
+import java.util.Locale;
 
 public class PetMenuGuiBedrock implements PetMenuGui {
 
@@ -40,8 +43,7 @@ public class PetMenuGuiBedrock implements PetMenuGui {
 
     @Override
     public void openPetMenu(Player player, Pet pet) {
-        BaseAPI baseAPI = getBaseApi();
-        if (baseAPI == null) {
+        if (!canUseFloodgateForms(player)) {
             fallbackJavaGui.openPetMenu(player, pet);
             return;
         }
@@ -57,7 +59,7 @@ public class PetMenuGuiBedrock implements PetMenuGui {
         boolean muted = plugin.getPetManger().isPetMuted(currentPet);
 
         SimpleForm.Builder builder = SimpleForm.builder()
-                .title("§6宠物界面")
+                .title("§6宠物面板")
                 .content(buildPetContent(player, currentPet, needsBath, needsFeed, muted));
 
         builder.button("§e查看宠物信息", FormImage.Type.PATH, IMAGE_PATH_PET);
@@ -70,23 +72,25 @@ public class PetMenuGuiBedrock implements PetMenuGui {
         builder.button("§e返回宠物列表", FormImage.Type.PATH, IMAGE_PATH_BACK);
         builder.button("§8关闭", FormImage.Type.PATH, IMAGE_PATH_CLOSE);
 
-        builder.validResultHandler((response) -> Bukkit.getScheduler().runTask(plugin, () -> {
+        builder.validResultHandler(response -> Bukkit.getScheduler().runTask(plugin, () -> {
             switch (response.clickedButtonId()) {
-                case 0 -> openPetMenu(player, currentPet);
+                case 0, 6 -> openPetMenu(player, currentPet);
                 case 1 -> openRenameForm(player, currentPet);
                 case 2 -> hidePet(player, currentPet.id());
                 case 3 -> handleBath(player, currentPet.id());
                 case 4 -> handleFeed(player, currentPet.id());
                 case 5 -> toggleMute(player, currentPet.id());
-                case 6 -> openPetMenu(player, currentPet);
                 case 7 -> plugin.getGuiManager().openPetSelectMenu(player);
                 default -> {
                 }
             }
         }));
-        builder.closedOrInvalidResultHandler(() -> Bukkit.getScheduler().runTask(plugin, () -> plugin.getGuiManager().openPetSelectMenu(player)));
+        builder.closedOrInvalidResultHandler(() ->
+                Bukkit.getScheduler().runTask(plugin, () -> plugin.getGuiManager().openPetSelectMenu(player)));
 
-        baseAPI.sendForm(player.getUniqueId(), builder);
+        if (!FloodgateApi.getInstance().sendForm(player.getUniqueId(), builder)) {
+            fallbackJavaGui.openPetMenu(player, pet);
+        }
     }
 
     @Override
@@ -107,8 +111,7 @@ public class PetMenuGuiBedrock implements PetMenuGui {
     }
 
     private void openRenameForm(Player player, Pet pet) {
-        BaseAPI baseAPI = getBaseApi();
-        if (baseAPI == null) {
+        if (!canUseFloodgateForms(player)) {
             fallbackJavaGui.openPetMenu(player, pet);
             return;
         }
@@ -116,10 +119,11 @@ public class PetMenuGuiBedrock implements PetMenuGui {
         CustomForm.Builder builder = CustomForm.builder()
                 .title("重命名宠物")
                 .label("§7当前名称: §f" + plugin.getPetManger().getDisplayName(pet, player))
+                .label("§7输入的新名称会保留模板里的前后缀。")
                 .input("新名称", "请输入新的宠物名称", pet.name());
 
-        builder.validResultHandler((response) -> {
-            String newName = response.asInput(1);
+        builder.validResultHandler(response -> {
+            String newName = response.asInput(2);
             Bukkit.getScheduler().runTask(plugin, () -> {
                 if (newName == null || newName.trim().isEmpty()) {
                     send(player, "§c名称不能为空。");
@@ -143,7 +147,9 @@ public class PetMenuGuiBedrock implements PetMenuGui {
         });
         builder.closedOrInvalidResultHandler(() -> Bukkit.getScheduler().runTask(plugin, () -> openPetMenu(player, pet)));
 
-        baseAPI.sendForm(player.getUniqueId(), builder);
+        if (!FloodgateApi.getInstance().sendForm(player.getUniqueId(), builder)) {
+            fallbackJavaGui.openPetMenu(player, pet);
+        }
     }
 
     private void hidePet(Player player, long petId) {
@@ -169,7 +175,7 @@ public class PetMenuGuiBedrock implements PetMenuGui {
             return;
         }
         if (!plugin.getPetManger().needsBath(pet)) {
-            send(player, "§c这只宠物现在还不想洗澡。");
+            send(player, "§c这只宠物现在还不需要洗澡。");
             openPetMenu(player, pet);
             return;
         }
@@ -234,21 +240,64 @@ public class PetMenuGuiBedrock implements PetMenuGui {
 
     private String buildPetContent(Player player, Pet pet, boolean needsBath, boolean needsFeed, boolean muted) {
         boolean blindBox = plugin.getPetManger().isBlindBoxPet(pet);
+        PetConfig petConfig = plugin.getPetConfigManger().pets.get(pet.type());
+        String rarity = resolveRarityText(petConfig);
+        String multiplier = formatMultiplier(pet.times());
+        String progressBar = plugin.getPetProgressService().buildProgressBar(pet, 16);
+        int requiredExp = plugin.getPetProgressService().getRequiredExp(pet);
+
         StringBuilder content = new StringBuilder();
         content.append("§f名称: §r").append(plugin.getPetManger().getDisplayName(pet, player)).append('\n');
         content.append("§7ID: §f").append(pet.id()).append('\n');
         content.append("§7状态: ").append(pet.show() ? "§a已出战" : "§7未出战").append('\n');
         content.append("§7静音: ").append(muted ? "§e是" : "§7否").append('\n');
+        content.append("§7稀有度: ").append(rarity).append('\n');
+        content.append("§7类型: §f").append(blindBox ? "???" : pet.type()).append('\n');
         content.append("§7等级: §f").append(blindBox ? "???" : pet.level()).append('\n');
-        content.append("§7经验: §f").append(pet.exp()).append(" / ").append(plugin.getPetProgressService().getRequiredExp(pet)).append('\n');
-        content.append("§7类型: §f").append(blindBox ? "???" : pet.type()).append("\n\n");
-        content.append(needsBath ? "§9需要洗澡" : "§7当前不需要洗澡").append('\n');
-        content.append(needsFeed ? "§6需要喂食" : "§7当前不需要喂食");
+        content.append("§7经验: §f").append(pet.exp()).append(" / ").append(requiredExp).append('\n');
+        content.append("§7进度: §f").append(progressBar).append('\n');
+        content.append("§7倍率: §f").append(multiplier).append('\n');
+
+        if (petConfig != null) {
+            content.append("§7可骑乘: ").append(petConfig.rideable() ? "§a是" : "§7否").append('\n');
+            content.append("§7可移动: ").append(petConfig.movable() ? "§a是" : "§7否").append('\n');
+            if (!blindBox && petConfig.expPerMinute() > 0) {
+                content.append("§7每分钟经验: §f").append(petConfig.expPerMinute()).append('\n');
+            }
+        }
+
+        content.append('\n');
+        content.append(needsBath ? "§9当前需要洗澡" : "§7当前不需要洗澡").append('\n');
+        content.append(needsFeed ? "§6当前需要喂食" : "§7当前不需要喂食").append('\n');
+        content.append("§8潜行右键宠物也可以打开菜单");
         return content.toString();
     }
 
-    private BaseAPI getBaseApi() {
-        return (BaseAPI) Bukkit.getPluginManager().getPlugin("BaseAPI");
+    private boolean canUseFloodgateForms(Player player) {
+        try {
+            FloodgateApi api = FloodgateApi.getInstance();
+            return api != null && api.isFloodgatePlayer(player.getUniqueId());
+        } catch (IllegalStateException exception) {
+            return false;
+        }
+    }
+
+    private static String resolveRarityText(PetConfig petConfig) {
+        String rarity = petConfig == null || petConfig.rarity() == null || petConfig.rarity().isBlank()
+                ? "&f普通"
+                : petConfig.rarity();
+        return rarity.replace('&', '§');
+    }
+
+    private static String formatMultiplier(double value) {
+        String formatted = String.format(Locale.US, "%.2f", value);
+        if (formatted.endsWith("00")) {
+            return formatted.substring(0, formatted.length() - 3);
+        }
+        if (formatted.endsWith("0")) {
+            return formatted.substring(0, formatted.length() - 1);
+        }
+        return formatted;
     }
 
     private static void send(Player player, String message) {

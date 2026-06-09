@@ -11,6 +11,9 @@ import java.util.Map;
 public record PetConfig(
         String name,
         String baseName,
+        String rarity,
+        boolean rideable,
+        boolean movable,
         String modelId,
         String type,
         double times,
@@ -27,14 +30,22 @@ public record PetConfig(
 ) {
 
     public Pet toPet(long id, Player owner) {
+        return toPet(id, owner, 0, false);
+    }
+
+    public Pet toPet(long id, Player owner, int level, boolean blindBoxRevealPending) {
+        Map<String, Object> petData = metaData == null ? new LinkedHashMap<>() : new LinkedHashMap<>(metaData);
+        if (blindBoxRevealPending) {
+            petData.put("blindBoxRevealPending", true);
+        }
         return new Pet(
                 id,
                 name,
                 type,
-                0,
+                level,
                 0,
                 times,
-                metaData == null ? Map.of() : new LinkedHashMap<>(metaData),
+                petData,
                 false,
                 owner,
                 null

@@ -8,9 +8,14 @@ save:
     table: qcpet
 
 player:
-  max-display-count: 3
+  max-display-count: 1
 
 pet:
+  ride:
+    ground-speed: 0.55
+    flying-speed: 0.45
+    flying-vertical-speed: 0.2
+    flying-max-height: 5.0
   tutorial:
     enabled: true
     reminder-interval-seconds: 300

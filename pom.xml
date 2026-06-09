@@ -6,7 +6,7 @@
 
     <groupId>cn.qianqueyunting</groupId>
     <artifactId>qcpet</artifactId>
-    <version>1.1.4</version>
+    <version>1.1.9</version>
     <packaging>jar</packaging>
 
     <name>QcPet</name>
@@ -40,6 +40,26 @@
         <repository>
             <id>placeholderapi</id>
             <url>https://repo.helpch.at/releases/</url>
+        </repository>
+        <repository>
+            <id>fancyinnovations-snapshots</id>
+            <url>https://maven.fancyspaces.net/fancyinnovations/snapshots</url>
+        </repository>
+        <repository>
+            <id>fancyinnovations-releases</id>
+            <url>https://maven.fancyspaces.net/fancyinnovations/releases</url>
+        </repository>
+        <repository>
+            <id>papermc-snapshots</id>
+            <url>https://artifactory.papermc.io/artifactory/snapshots</url>
+        </repository>
+        <repository>
+            <id>opencollab-releases</id>
+            <url>https://repo.opencollab.dev/main/</url>
+        </repository>
+        <repository>
+            <id>opencollab-snapshots</id>
+            <url>https://repo.opencollab.dev/maven-snapshots/</url>
         </repository>
     </repositories>
 
@@ -77,11 +97,17 @@
         </dependency>
 
         <dependency>
-            <groupId>BaseAPI</groupId>
-            <artifactId>BaseAPI</artifactId>
-            <version>1.0.4</version>
-            <scope>system</scope>
-            <systemPath>${project.basedir}/lib/BaseAPI-1.0.4.jar</systemPath>
+            <groupId>org.geysermc.floodgate</groupId>
+            <artifactId>api</artifactId>
+            <version>2.2.4-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.geysermc.cumulus</groupId>
+            <artifactId>cumulus</artifactId>
+            <version>1.1.2</version>
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
