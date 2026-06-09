@@ -3,6 +3,7 @@ E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\event\LoadSaveEvent.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\event\PetProtectionListener.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\gui\GuiManager.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\gui\GuiManger.java
+E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\gui\PetBackpackGui.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\gui\PetMenuGui.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\gui\PetMenuGuiBedrock.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\gui\PetMenuGuiJava.java
@@ -28,6 +29,7 @@ E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\math\UnaryNode.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\pet\NmsPetAiController.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\pet\NmsPlayerPetController.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\pet\Pet.java
+E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\pet\PetBackpackService.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\pet\PetConfig.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\pet\PetConfigManger.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\pet\PetLoadException.java
