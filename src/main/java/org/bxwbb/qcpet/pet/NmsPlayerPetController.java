@@ -4,6 +4,7 @@ import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bxwbb.qcpet.utils.FoliaSchedulers;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -326,7 +327,7 @@ public final class NmsPlayerPetController {
 
         private void scheduleTabRemove(Player viewer, UUID uuid) throws ReflectiveOperationException {
             Object packet = playerInfoRemovePacketConstructor.newInstance(List.of(uuid));
-            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            FoliaSchedulers.runPlayerLater(plugin, viewer, 10L, () -> {
                 try {
                     if (viewer.isOnline()) {
                         sendOnPlayerScheduler(viewer, packet);
@@ -334,7 +335,7 @@ public final class NmsPlayerPetController {
                 } catch (ReflectiveOperationException exception) {
                     throw new IllegalStateException("玩家宠物延迟移出 tab 失败", exception);
                 }
-            }, 10L);
+            });
         }
 
         private void sendOnPlayerScheduler(Player viewer, Object packet) throws ReflectiveOperationException {

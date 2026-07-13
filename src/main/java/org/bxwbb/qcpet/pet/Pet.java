@@ -2,9 +2,19 @@ package org.bxwbb.qcpet.pet;
 
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+
 import java.util.Map;
 
-public record Pet(long id, String name, String type, int level, int exp, double times, Map<String, Object> data, boolean show, Player owner, Entity entity) {
+public record Pet(long id,
+                  String name,
+                  String type,
+                  int level,
+                  int exp,
+                  double times,
+                  Map<String, Object> data,
+                  boolean show,
+                  Player owner,
+                  Entity entity) {
 
     public String request(String str) {
         if (str == null || str.isEmpty()) {

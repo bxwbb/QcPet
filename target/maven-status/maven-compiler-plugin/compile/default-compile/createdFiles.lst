@@ -1,5 +1,6 @@
 org\bxwbb\qcpet\utils\saveUtil\MySqlSaveUtil.class
 org\bxwbb\qcpet\gui\SelectPetGui.class
+org\bxwbb\qcpet\utils\FoliaSchedulers.class
 org\bxwbb\qcpet\pet\PetConfigManger.class
 org\bxwbb\qcpet\gui\SelectPetGuiJava$PetSelectMenuHolder.class
 org\bxwbb\qcpet\math\BinaryNode.class
@@ -30,6 +31,7 @@ org\bxwbb\qcpet\pet\PetLoadException.class
 org\bxwbb\qcpet\utils\saveUtil\MySqlSaveUtil$PetRecord.class
 org\bxwbb\qcpet\math\BooleanNode.class
 org\bxwbb\qcpet\QcPet.class
+org\bxwbb\qcpet\utils\FoliaSchedulers$TaskHandle.class
 org\bxwbb\qcpet\math\StringNode.class
 org\bxwbb\qcpet\math\ExpressionParser.class
 org\bxwbb\qcpet\event\LoadSaveEvent.class

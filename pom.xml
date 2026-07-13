@@ -6,7 +6,7 @@
 
     <groupId>cn.qianqueyunting</groupId>
     <artifactId>qcpet</artifactId>
-    <version>1.2.0</version>
+    <version>1.2.2</version>
     <packaging>jar</packaging>
 
     <name>QcPet</name>
@@ -116,6 +116,14 @@
             <version>1.0.0</version>
             <scope>system</scope>
             <systemPath>${project.basedir}/lib/qclevel-1.0.jar</systemPath>
+        </dependency>
+
+        <dependency>
+            <groupId>database-1.0-SNAPSHOT</groupId>
+            <artifactId>database-1.0-SNAPSHOT</artifactId>
+            <version>1.0.0</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/lib/database-1.0-SNAPSHOT.jar</systemPath>
         </dependency>
     </dependencies>
 

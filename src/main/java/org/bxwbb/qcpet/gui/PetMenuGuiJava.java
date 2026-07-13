@@ -15,13 +15,16 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bxwbb.qcpet.QcPet;
 import org.bxwbb.qcpet.pet.Pet;
 import org.bxwbb.qcpet.pet.PetConfig;
+import org.bxwbb.qcpet.utils.FoliaSchedulers;
 import org.bxwbb.qcpet.utils.TextComponentUtil;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiConsumer;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -37,9 +40,10 @@ public class PetMenuGuiJava implements PetMenuGui {
     private static final int TRAVEL_SLOT = 40;
     private static final int MUTE_SLOT = 41;
     private static final int CLOSE_SLOT = 42;
+    private static final int RIDEABLE_SLOT = 43;
 
     private final QcPet plugin;
-    private final Map<UUID, ChatSession> chatSessions = new HashMap<>();
+    private final Map<UUID, ChatSession> chatSessions = new ConcurrentHashMap<>();
 
     public PetMenuGuiJava(QcPet plugin) {
         this.plugin = plugin;
@@ -85,6 +89,7 @@ public class PetMenuGuiJava implements PetMenuGui {
                 "关闭界面",
                 List.of("不执行任何操作")
         ));
+        inventory.setItem(RIDEABLE_SLOT, createRideableItem(pet));
         player.openInventory(inventory);
     }
 
@@ -99,19 +104,18 @@ public class PetMenuGuiJava implements PetMenuGui {
 
         int slot = event.getSlot();
         if (slot == HIDE_SLOT) {
-            plugin.getPetManger().hidePetAsync(player, holder.petId())
-                    .whenComplete((hidden, throwable) -> {
-                        if (throwable != null) {
-                            send(player, "&c隐藏宠物失败: " + throwable.getMessage());
-                            return;
-                        }
-                        if (!hidden) {
-                            send(player, "&c宠物状态已变化，请重新打开界面。");
-                            return;
-                        }
-                        player.closeInventory();
-                        send(player, "&a宠物已隐藏。");
-                    });
+            whenCompleteSync(plugin.getPetManger().hidePetAsync(player, holder.petId()), player, (hidden, throwable) -> {
+                if (throwable != null) {
+                    send(player, "&c隐藏宠物失败: " + throwable.getMessage());
+                    return;
+                }
+                if (!hidden) {
+                    send(player, "&c宠物状态已变化，请重新打开界面。");
+                    return;
+                }
+                player.closeInventory();
+                send(player, "&a宠物已隐藏。");
+            });
             return;
         }
 
@@ -155,19 +159,18 @@ public class PetMenuGuiJava implements PetMenuGui {
                 send(player, "&c这只宠物现在还不需要洗澡。");
                 return;
             }
-            plugin.getPetManger().bathPetAsync(player, holder.petId())
-                    .whenComplete((bathedPet, throwable) -> {
-                        if (throwable != null) {
-                            send(player, "&c洗澡失败: " + throwable.getMessage());
-                            return;
-                        }
-                        if (bathedPet == null) {
-                            send(player, "&c未找到对应宠物。");
-                            return;
-                        }
-                        send(player, "&a洗澡完成，获得 " + plugin.getPetManger().getBathRewardExp(bathedPet) + " 经验。");
-                        openPetMenu(player, bathedPet);
-                    });
+            whenCompleteSync(plugin.getPetManger().bathPetAsync(player, holder.petId()), player, (bathedPet, throwable) -> {
+                if (throwable != null) {
+                    send(player, "&c洗澡失败: " + throwable.getMessage());
+                    return;
+                }
+                if (bathedPet == null) {
+                    send(player, "&c未找到对应宠物。");
+                    return;
+                }
+                send(player, "&a洗澡完成，获得 " + plugin.getPetManger().getBathRewardExp(bathedPet) + " 经验。");
+                openPetMenu(player, bathedPet);
+            });
             return;
         }
 
@@ -182,39 +185,66 @@ public class PetMenuGuiJava implements PetMenuGui {
                 send(player, "&c这只宠物现在还不饿。");
                 return;
             }
-            plugin.getPetManger().feedPetAsync(player, holder.petId())
-                    .whenComplete((fedPet, throwable) -> {
-                        if (throwable != null) {
-                            send(player, "&c喂食失败: " + throwable.getMessage());
-                            return;
-                        }
-                        if (fedPet == null) {
-                            send(player, "&c未找到对应宠物。");
-                            return;
-                        }
-                        send(player, "&a宠物已经吃饱了，获得 " + plugin.getPetManger().getFeedRewardExp(fedPet) + " 经验。");
-                        openPetMenu(player, fedPet);
-                    });
+            whenCompleteSync(plugin.getPetManger().feedPetAsync(player, holder.petId()), player, (fedPet, throwable) -> {
+                if (throwable != null) {
+                    send(player, "&c喂食失败: " + throwable.getMessage());
+                    return;
+                }
+                if (fedPet == null) {
+                    send(player, "&c未找到对应宠物。");
+                    return;
+                }
+                send(player, "&a宠物已经吃饱了，获得 " + plugin.getPetManger().getFeedRewardExp(fedPet) + " 经验。");
+                openPetMenu(player, fedPet);
+            });
             return;
         }
 
         if (slot == MUTE_SLOT) {
-            plugin.getPetManger().togglePetMutedAsync(player, holder.petId())
-                    .whenComplete((updatedPet, throwable) -> {
-                        if (throwable != null) {
-                            send(player, "&c切换静音失败: " + throwable.getMessage());
-                            return;
-                        }
-                        if (updatedPet == null) {
-                            send(player, "&c未找到对应宠物。");
-                            player.closeInventory();
-                            return;
-                        }
-                        send(player, plugin.getPetManger().isPetMuted(updatedPet)
-                                ? "&a宠物已设为静音。"
-                                : "&a宠物已恢复发声。");
-                        openPetMenu(player, updatedPet);
-                    });
+            whenCompleteSync(plugin.getPetManger().togglePetMutedAsync(player, holder.petId()), player, (updatedPet, throwable) -> {
+                if (throwable != null) {
+                    send(player, "&c切换静音失败: " + throwable.getMessage());
+                    return;
+                }
+                if (updatedPet == null) {
+                    send(player, "&c未找到对应宠物。");
+                    player.closeInventory();
+                    return;
+                }
+                send(player, plugin.getPetManger().isPetMuted(updatedPet)
+                        ? "&a宠物已设为静音。"
+                        : "&a宠物已恢复发声。");
+                openPetMenu(player, updatedPet);
+            });
+            return;
+        }
+
+        if (slot == RIDEABLE_SLOT) {
+            Pet pet = plugin.getPetManger().getPet(player, holder.petId());
+            if (pet == null) {
+                send(player, "&c未找到对应宠物。");
+                player.closeInventory();
+                return;
+            }
+            if (!plugin.getPetManger().isPetRideable(pet)) {
+                send(player, "&c该宠物类型不支持骑乘。");
+                return;
+            }
+            whenCompleteSync(plugin.getPetManger().togglePetRideableAsync(player, holder.petId()), player, (updatedPet, throwable) -> {
+                if (throwable != null) {
+                    send(player, "&c切换骑乘状态失败: " + throwable.getMessage());
+                    return;
+                }
+                if (updatedPet == null) {
+                    send(player, "&c未找到对应宠物。");
+                    player.closeInventory();
+                    return;
+                }
+                send(player, plugin.getPetManger().isPetPlayerCanRideable(updatedPet)
+                        ? "&a宠物已允许玩家骑乘。"
+                        : "&a宠物已禁止玩家骑乘。");
+                openPetMenu(player, updatedPet);
+            });
             return;
         }
 
@@ -234,7 +264,7 @@ public class PetMenuGuiJava implements PetMenuGui {
         event.setCancelled(true);
         String rawMessage = event.getMessage().trim();
         if (rawMessage.equalsIgnoreCase("cancel")) {
-            plugin.getServer().getScheduler().runTask(plugin, () -> send(player, "&e已取消当前操作。"));
+            FoliaSchedulers.runPlayer(plugin, player, () -> send(player, "&e已取消当前操作。"));
             return;
         }
 
@@ -362,6 +392,26 @@ public class PetMenuGuiJava implements PetMenuGui {
         );
     }
 
+    private ItemStack createRideableItem(Pet pet) {
+        boolean rideableType = plugin.getPetManger().isPetRideable(pet);
+        boolean rideable = plugin.getPetManger().isPetPlayerCanRideable(pet);
+        if (!rideableType) {
+            return createActionItem(
+                    Material.BARRIER,
+                    "不支持骑乘",
+                    List.of("该宠物类型未启用骑乘功能")
+            );
+        }
+        return createActionItem(
+                rideable ? Material.SADDLE : Material.LEAD,
+                rideable ? "禁止骑乘" : "允许骑乘",
+                List.of(
+                        "当前状态: " + (rideable ? "允许骑乘" : "禁止骑乘"),
+                        rideable ? "点击后禁止玩家骑乘该宠物" : "点击后允许玩家骑乘该宠物"
+                )
+        );
+    }
+
     private void handleRenameInput(Player player, ChatSession session, String rawMessage) {
         String normalizedName = plugin.getPetManger().normalizePetName(rawMessage);
         if (normalizedName.isEmpty()) {
@@ -381,20 +431,19 @@ public class PetMenuGuiJava implements PetMenuGui {
             return;
         }
 
-        plugin.getServer().getScheduler().runTask(plugin, () ->
-                plugin.getPetManger().renamePetAsync(player, session.petId(), rawMessage)
-                        .whenComplete((pet, throwable) -> {
-                            if (throwable != null) {
-                                send(player, "&c重命名失败: " + throwable.getMessage());
-                                return;
-                            }
-                            if (pet == null) {
-                                send(player, "&c未找到对应宠物，可能已被删除。");
-                                return;
-                            }
-                            send(player, "&a宠物已重命名。");
-                            openPetMenu(player, pet);
-                        })
+        FoliaSchedulers.runPlayer(plugin, player, () ->
+                whenCompleteSync(plugin.getPetManger().renamePetAsync(player, session.petId(), rawMessage), player, (pet, throwable) -> {
+                    if (throwable != null) {
+                        send(player, "&c重命名失败: " + throwable.getMessage());
+                        return;
+                    }
+                    if (pet == null) {
+                        send(player, "&c未找到对应宠物，可能已被删除。");
+                        return;
+                    }
+                    send(player, "&a宠物已重命名。");
+                    openPetMenu(player, pet);
+                })
         );
     }
 
@@ -415,7 +464,7 @@ public class PetMenuGuiJava implements PetMenuGui {
             return;
         }
 
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
+        FoliaSchedulers.runPlayer(plugin, player, () -> {
             boolean scheduled = plugin.getPetManger().scheduleAutoTravel(player, session.petId(), x, z);
             if (!scheduled) {
                 send(player, "&c未找到对应宠物，可能已被收回或删除。");
@@ -464,9 +513,14 @@ public class PetMenuGuiJava implements PetMenuGui {
         return itemStack;
     }
 
+    private <T> void whenCompleteSync(CompletableFuture<T> future, Player player, BiConsumer<T, Throwable> consumer) {
+        future.whenComplete((result, throwable) ->
+                FoliaSchedulers.runPlayer(plugin, player, () -> consumer.accept(result, throwable)));
+    }
+
     private void restoreChatSession(Player player, ChatSession session, String message) {
         chatSessions.put(player.getUniqueId(), session);
-        plugin.getServer().getScheduler().runTask(plugin, () -> send(player, "&c" + message));
+        FoliaSchedulers.runPlayer(plugin, player, () -> send(player, "&c" + message));
     }
 
     private static void send(Player player, String message) {

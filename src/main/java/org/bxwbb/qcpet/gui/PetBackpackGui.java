@@ -36,6 +36,12 @@ public class PetBackpackGui {
     }
 
     public void open(Player player, Pet pet) {
+        Pet currentPet = pet == null ? null : plugin.getPetManger().getPet(player, pet.id());
+        if (currentPet == null) {
+            player.sendMessage(TextComponentUtil.legacy("&c未找到对应宠物。"));
+            return;
+        }
+        pet = currentPet;
         int unlockedSlots = plugin.getPetBackpackService().getUnlockedSlots(pet);
         int maxSlots = plugin.getPetBackpackService().getMaxSlots(pet);
         Inventory inventory = Bukkit.createInventory(
@@ -72,7 +78,8 @@ public class PetBackpackGui {
 
         if (event.getClick() == ClickType.SHIFT_LEFT || event.getClick() == ClickType.SHIFT_RIGHT) {
             if (event.getClickedInventory() != null && event.getClickedInventory().equals(player.getInventory())) {
-                if (holder.unlockedSlots() < BACKPACK_SIZE || event.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY) {
+                if (event.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY
+                        && !hasUnlockedEmptySlot(event.getInventory(), holder.unlockedSlots())) {
                     event.setCancelled(true);
                 }
             }
@@ -102,6 +109,16 @@ public class PetBackpackGui {
             contents[slot] = inventory.getItem(slot);
         }
         plugin.getPetBackpackService().saveContents(holder.petId(), contents, holder.unlockedSlots());
+    }
+
+    private static boolean hasUnlockedEmptySlot(Inventory inventory, int unlockedSlots) {
+        for (int slot = 0; slot < unlockedSlots; slot++) {
+            ItemStack item = inventory.getItem(slot);
+            if (item == null || item.getType().isAir()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static ItemStack createLockedUpgradeableItem() {

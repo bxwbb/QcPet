@@ -1,12 +1,12 @@
 package org.bxwbb.qcpet.gui;
 
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.inventory.InventoryHolder;
 import org.bxwbb.qcpet.QcPet;
 import org.bxwbb.qcpet.pet.Pet;
 import org.bxwbb.qcpet.pet.PetConfig;
+import org.bxwbb.qcpet.utils.FoliaSchedulers;
 import org.geysermc.cumulus.form.SimpleForm;
 import org.geysermc.cumulus.util.FormImage;
 import org.geysermc.floodgate.api.FloodgateApi;
@@ -69,7 +69,7 @@ public class SelectPetGuiBedrock implements SelectPetGui {
         }
         builder.button("§8关闭", FormImage.Type.PATH, "textures/ui/realms_red_x");
 
-        builder.validResultHandler(response -> Bukkit.getScheduler().runTask(plugin, () -> {
+        builder.validResultHandler(response -> FoliaSchedulers.runPlayer(plugin, player, () -> {
             int clicked = response.clickedButtonId();
             if (clicked < petCountOnPage) {
                 selectPet(player, pets.get(startIndex + clicked));

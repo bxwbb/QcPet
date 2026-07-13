@@ -142,12 +142,12 @@ public class PetUtil {
 
     private <T> CompletableFuture<T> supplyAsync(UnsafeSupplier<T> supplier) {
         CompletableFuture<T> future = new CompletableFuture<>();
-        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+        FoliaSchedulers.runAsync(plugin, () -> {
             try {
                 T value = supplier.get();
-                plugin.getServer().getScheduler().runTask(plugin, () -> future.complete(value));
+                FoliaSchedulers.runGlobal(plugin, () -> future.complete(value));
             } catch (Exception exception) {
-                plugin.getServer().getScheduler().runTask(plugin, () -> future.completeExceptionally(exception));
+                FoliaSchedulers.runGlobal(plugin, () -> future.completeExceptionally(exception));
             }
         });
         return future;

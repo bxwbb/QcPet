@@ -69,7 +69,7 @@ public class GuiManager implements Listener {
 
         event.setCancelled(true);
         PetConfig petConfig = plugin.getPetConfigManger().pets.get(pet.type());
-        if (petConfig != null && !petConfig.rideable()) {
+        if (petConfig == null || !petConfig.rideable() || !plugin.getPetManger().isPetPlayerCanRideable(pet)) {
             return;
         }
         if (!clickedEntity.getPassengers().contains(player)) {

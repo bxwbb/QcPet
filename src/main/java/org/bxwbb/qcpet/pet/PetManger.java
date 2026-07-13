@@ -44,11 +44,11 @@ import org.bukkit.entity.Wither;
 import org.bukkit.entity.Wolf;
 import org.bukkit.entity.Display;
 import org.bukkit.entity.TextDisplay;
-import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
 import org.bxwbb.qcpet.QcPet;
 import org.bxwbb.qcpet.math.MathExpression;
+import org.bxwbb.qcpet.utils.FoliaSchedulers;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -59,6 +59,8 @@ import java.util.Optional;
 import java.util.PriorityQueue;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
@@ -76,6 +78,7 @@ public class PetManger {
     private static final String LAST_FEED_REMINDER_TIME_KEY = "lastFeedReminderTime";
     private static final String ENTITY_STATE_KEY = "entityState";
     private static final String MUTED_KEY = "muted";
+    private static final String RIDEABLE_KEY = "rideable";
     private static final String BLIND_BOX_REVEAL_PENDING_KEY = "blindBoxRevealPending";
     private static final double TELEPORT_DISTANCE_SQUARED = 144.0D;
     private static final double FOLLOW_STOP_DISTANCE_SQUARED = 4.0D;
@@ -86,16 +89,16 @@ public class PetManger {
     private static final long BLIND_BOX_REVEAL_DURATION_TICKS = 40L;
     private static final LegacyComponentSerializer LEGACY_SERIALIZER = LegacyComponentSerializer.legacyAmpersand();
     private final QcPet plugin;
-    public final Map<UUID, List<Pet>> pets = new HashMap<>();
-    private final Map<UUID, List<Long>> temporarilyHiddenPets = new HashMap<>();
-    private final Map<UUID, BlindBoxRevealInteraction> blindBoxRevealInteractions = new HashMap<>();
-    private final Map<UUID, AutoTravelState> autoTravelStates = new HashMap<>();
-    private final BukkitTask followTask;
+    public final Map<UUID, List<Pet>> pets = new ConcurrentHashMap<>();
+    private final Map<UUID, List<Long>> temporarilyHiddenPets = new ConcurrentHashMap<>();
+    private final Map<UUID, BlindBoxRevealInteraction> blindBoxRevealInteractions = new ConcurrentHashMap<>();
+    private final Map<UUID, AutoTravelState> autoTravelStates = new ConcurrentHashMap<>();
+    private final FoliaSchedulers.TaskHandle followTask;
     private int internalSpawnDepth;
 
     public PetManger(QcPet plugin) {
         this.plugin = plugin;
-        this.followTask = plugin.getServer().getScheduler().runTaskTimer(plugin, this::tickVisiblePets, 1L, 1L);
+        this.followTask = FoliaSchedulers.runTimer(plugin, 1L, 1L, this::tickVisiblePets);
         registerQcLevelExpBoostProvider();
     }
 
@@ -193,18 +196,18 @@ public class PetManger {
         }
 
         CompletableFuture<Pet> future = new CompletableFuture<>();
-        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+        FoliaSchedulers.runAsync(plugin, () -> {
             try {
                 Pet pet = createPetForGive(player, petConfig, initialLevel);
                 plugin.getPetUtil().savePet(pet);
                 plugin.getPetUtil().bindPetToPlayer(player, pet.id());
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                FoliaSchedulers.runPlayer(plugin, player, () -> {
                     addPetToMemory(player, pet);
                     executePetEvent(player, pet, "on-give");
                     future.complete(pet);
                 });
             } catch (Exception exception) {
-                plugin.getServer().getScheduler().runTask(plugin, () -> future.completeExceptionally(exception));
+                FoliaSchedulers.runPlayer(plugin, player, () -> future.completeExceptionally(exception));
             }
         });
         return future;
@@ -248,10 +251,10 @@ public class PetManger {
         }
 
         CompletableFuture<Boolean> future = new CompletableFuture<>();
-        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+        FoliaSchedulers.runAsync(plugin, () -> {
             try {
                 boolean removed = plugin.getPetUtil().deletePet(player, petId);
-                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                FoliaSchedulers.runPlayer(plugin, player, () -> {
                     if (removed) {
                         findPet(player, petId).ifPresent(this::removeEntity);
                         clearTemporaryHidden(player.getUniqueId(), petId);
@@ -260,7 +263,7 @@ public class PetManger {
                     future.complete(removed);
                 });
             } catch (Exception exception) {
-                plugin.getServer().getScheduler().runTask(plugin, () -> future.completeExceptionally(exception));
+                FoliaSchedulers.runPlayer(plugin, player, () -> future.completeExceptionally(exception));
             }
         });
         return future;
@@ -276,7 +279,7 @@ public class PetManger {
         }
 
         CompletableFuture<Pet> future = new CompletableFuture<>();
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
+        FoliaSchedulers.runPlayer(plugin, player, () -> {
             try {
                 Pet pet = findPet(player, petId).orElse(null);
                 if (pet == null) {
@@ -298,7 +301,7 @@ public class PetManger {
                         pet.owner(),
                         pet.entity()
                 );
-                if (updated.entity() != null && updated.entity().isValid()) {
+                if (canAccessEntity(updated.entity()) && updated.entity().isValid()) {
                     updated = applyEntityState(player, updated, updated.entity());
                 }
                 replacePet(player, updated);
@@ -319,7 +322,7 @@ public class PetManger {
         }
 
         CompletableFuture<Pet> future = new CompletableFuture<>();
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
+        FoliaSchedulers.runPlayer(plugin, player, () -> {
             try {
                 Pet pet = findPet(player, petId).orElse(null);
                 if (pet == null) {
@@ -331,7 +334,7 @@ public class PetManger {
                         plugin.getPetProgressService().addExperience(pet, getBathRewardExp(pet)),
                         System.currentTimeMillis()
                 );
-                if (cleaned.entity() != null && cleaned.entity().isValid()) {
+                if (canAccessEntity(cleaned.entity()) && cleaned.entity().isValid()) {
                     cleaned = applyEntityState(player, cleaned, cleaned.entity());
                     playBathEffect(cleaned.entity());
                     playLoveEffect(cleaned.entity(), 20L);
@@ -354,7 +357,7 @@ public class PetManger {
         }
 
         CompletableFuture<Pet> future = new CompletableFuture<>();
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
+        FoliaSchedulers.runPlayer(plugin, player, () -> {
             try {
                 Pet pet = findPet(player, petId).orElse(null);
                 if (pet == null) {
@@ -366,7 +369,7 @@ public class PetManger {
                         plugin.getPetProgressService().addExperience(pet, getFeedRewardExp(pet)),
                         System.currentTimeMillis()
                 );
-                if (fed.entity() != null && fed.entity().isValid()) {
+                if (canAccessEntity(fed.entity()) && fed.entity().isValid()) {
                     fed = applyEntityState(player, fed, fed.entity());
                     playFeedEffect(fed.entity());
                     playLoveEffect(fed.entity(), 16L);
@@ -383,32 +386,118 @@ public class PetManger {
         return future;
     }
 
+    /**
+     * 异步设置宠物静音状态（是否屏蔽宠物音效）
+     * 全程通过服务端主线程调度器执行，操作完成后异步落库数据库
+     * @param player 操作的玩家
+     * @param petId 目标宠物唯一ID
+     * @param muted true=静音（关闭宠物声音），false=取消静音（恢复音效）
+     * @return CompletableFuture<Pet> 异步结果容器：成功返回更新后的宠物实例，宠物不存在返回null，异常则携带错误抛出
+     */
     public CompletableFuture<Pet> setPetMutedAsync(Player player, long petId, boolean muted) {
+        // 参数校验：玩家对象不可为空
         if (player == null) {
             throw new IllegalArgumentException("player cannot be null");
         }
 
+        // 创建异步结果容器，用于向外传递操作结果或异常
         CompletableFuture<Pet> future = new CompletableFuture<>();
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
+
+        // 提交任务到Bukkit主线程调度器执行（Minecrafttick主线程，安全操作实体、玩家数据）
+        FoliaSchedulers.runPlayer(plugin, player, () -> {
             try {
+                // 根据玩家与宠物ID查询对应宠物
                 Pet pet = findPet(player, petId).orElse(null);
+                // 未查询到该玩家拥有的目标宠物，直接完成Future返回null
                 if (pet == null) {
                     future.complete(null);
                     return;
                 }
 
+                // 修改宠物扩展JSON数据，写入静音标识键值
                 Pet updated = withDataValue(pet, MUTED_KEY, muted);
-                if (updated.entity() != null && updated.entity().isValid()) {
+
+                // 如果宠物实体存在且有效，同步更新实体当前状态（应用静音效果到游戏内实体）
+                if (canAccessEntity(updated.entity()) && updated.entity().isValid()) {
                     updated = applyEntityState(player, updated, updated.entity());
                 }
+
+                // 替换内存中缓存的宠物对象，刷新本地缓存
                 replacePet(player, updated);
+                // 临时保存更新后的宠物实例，用于回调传递
                 Pet resultPet = updated;
+
+                // 异步持久化宠物数据到MySQL数据库
                 plugin.getPetUtil().savePetAsync(resultPet)
+                        // 数据库保存完成后，统一处理Future回调（成功/异常都走completePetFuture）
                         .whenComplete((ignored, throwable) -> completePetFuture(future, resultPet, throwable));
             } catch (Exception exception) {
+                // 主线程内业务代码捕获到异常，将异常传入Future供外部接收
                 future.completeExceptionally(exception);
             }
         });
+
+        // 返回异步结果句柄，外部可监听完成事件
+        return future;
+    }
+
+    /**
+     * 异步设置宠物是否允许骑乘状态
+     * 任务提交至Bukkit主线程执行，内部模拟业务逻辑，数据库保存逻辑仅打印日志替代真实持久化
+     * @param player 操作所属玩家
+     * @param petId 目标宠物唯一ID
+     * @param rideable true=允许玩家骑乘该宠物，false=禁止骑乘
+     * @return CompletableFuture<Pet> 异步结果容器：成功返回更新后的宠物实例，宠物不存在返回null，异常携带错误信息
+     */
+    public CompletableFuture<Pet> setPetRideableAsync(Player player, long petId, boolean rideable) {
+        // 参数合法性校验：玩家对象不能为空
+        if (player == null) {
+            throw new IllegalArgumentException("player cannot be null");
+        }
+
+        // 创建Future容器，用于向外传递执行结果或捕获异常
+        CompletableFuture<Pet> future = new CompletableFuture<>();
+
+        // 将操作提交至MC主线程执行，保证实体操作线程安全
+        FoliaSchedulers.runPlayer(plugin, player, () -> {
+            try {
+                // 根据玩家+宠物ID查询对应宠物实例
+                Pet pet = findPet(player, petId).orElse(null);
+                // 未找到该玩家名下对应宠物，直接完成Future返回null
+                if (pet == null) {
+                    future.complete(null);
+                    return;
+                }
+
+                if (rideable && !isPetRideable(pet)) {
+                    throw new IllegalStateException("该宠物类型不支持骑乘");
+                }
+
+                // 修改宠物扩展JSON数据，写入骑乘状态标识
+                Pet updated = withDataValue(pet, RIDEABLE_KEY, rideable);
+
+                // 若游戏内宠物实体存在且有效，同步更新实体骑乘相关表现
+                if (canAccessEntity(updated.entity()) && updated.entity().isValid()) {
+                    updated = applyEntityState(player, updated, updated.entity());
+                    if (!rideable && updated.entity().getPassengers().contains(player)) {
+                        updated.entity().removePassenger(player);
+                    }
+                }
+
+                // 更新内存缓存中的宠物对象
+                replacePet(player, updated);
+                Pet resultPet = updated;
+
+                // 模拟异步保存数据库逻辑，使用打印日志替代真实入库操作
+                // 直接标记Future完成，传递更新后的宠物实例
+                plugin.getPetUtil().savePetAsync(resultPet)
+                        .whenComplete((ignored, throwable) -> completePetFuture(future, resultPet, throwable));
+            } catch (Exception exception) {
+                // 捕获主线程内所有业务异常，抛给外部调用方处理
+                future.completeExceptionally(exception);
+            }
+        });
+
         return future;
     }
 
@@ -420,6 +509,30 @@ public class PetManger {
         return setPetMutedAsync(player, petId, !isPetMuted(pet));
     }
 
+    /**
+     * 异步切换宠物可骑乘状态（一键取反）
+     * @param player 操作玩家
+     * @param petId 目标宠物ID
+     * @return CompletableFuture<Pet> 切换后的宠物实例，不存在返回null
+     */
+    public CompletableFuture<Pet> togglePetRideableAsync(Player player, long petId) {
+        Pet pet = getPet(player, petId);
+        if (pet == null) {
+            return CompletableFuture.completedFuture(null);
+        }
+        // 获取当前骑乘状态并取反
+        boolean currentRideable = isPetPlayerCanRideable(pet);
+        return setPetRideableAsync(player, petId, !currentRideable);
+    }
+
+    public boolean isPetPlayerCanRideable(Pet pet) {
+        if (!isPetRideable(pet)) {
+            return false;
+        }
+        return pet.data() == null || !pet.data().containsKey(RIDEABLE_KEY)
+                || getBooleanDataValue(pet, RIDEABLE_KEY);
+    }
+
     public CompletableFuture<Pet> addPetExperienceAsync(Player player, long petId, int amount) {
         if (player == null) {
             throw new IllegalArgumentException("player cannot be null");
@@ -429,7 +542,7 @@ public class PetManger {
         }
 
         CompletableFuture<Pet> future = new CompletableFuture<>();
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
+        FoliaSchedulers.runPlayer(plugin, player, () -> {
             try {
                 Pet pet = findPet(player, petId).orElse(null);
                 if (pet == null) {
@@ -438,7 +551,7 @@ public class PetManger {
                 }
                 Pet updated = plugin.getPetProgressService().addExperience(pet, amount);
                 int previousLevel = pet.level();
-                if (updated.entity() != null && updated.entity().isValid()) {
+                if (canAccessEntity(updated.entity()) && updated.entity().isValid()) {
                     updated = applyEntityState(player, updated, updated.entity());
                 }
                 replacePet(player, updated);
@@ -463,7 +576,7 @@ public class PetManger {
         }
 
         CompletableFuture<Pet> future = new CompletableFuture<>();
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
+        FoliaSchedulers.runPlayer(plugin, player, () -> {
             try {
                 Pet pet = findPet(player, petId).orElse(null);
                 if (pet == null) {
@@ -472,7 +585,7 @@ public class PetManger {
                 }
                 Pet updated = plugin.getPetProgressService().addLevels(pet, amount);
                 int previousLevel = pet.level();
-                if (updated.entity() != null && updated.entity().isValid()) {
+                if (canAccessEntity(updated.entity()) && updated.entity().isValid()) {
                     updated = applyEntityState(player, updated, updated.entity());
                 }
                 replacePet(player, updated);
@@ -510,7 +623,7 @@ public class PetManger {
             throw new IllegalArgumentException("player cannot be null");
         }
         CompletableFuture<Boolean> future = new CompletableFuture<>();
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
+        FoliaSchedulers.runPlayer(plugin, player, () -> {
             try {
                 Pet pet = findPet(player, petId).orElse(null);
                 clearTemporaryHidden(player.getUniqueId(), petId);
@@ -560,7 +673,7 @@ public class PetManger {
             throw new IllegalArgumentException("player cannot be null");
         }
         CompletableFuture<Boolean> future = new CompletableFuture<>();
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
+        FoliaSchedulers.runPlayer(plugin, player, () -> {
             try {
                 Pet pet = findPet(player, petId).orElse(null);
                 if (pet == null) {
@@ -586,7 +699,7 @@ public class PetManger {
             throw new IllegalArgumentException("player cannot be null");
         }
         CompletableFuture<Boolean> future = new CompletableFuture<>();
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
+        FoliaSchedulers.runPlayer(plugin, player, () -> {
             try {
                 Pet pet = findPet(player, petId).orElse(null);
                 if (pet == null || !pet.show()) {
@@ -613,7 +726,7 @@ public class PetManger {
             throw new IllegalArgumentException("player cannot be null");
         }
         CompletableFuture<Boolean> future = new CompletableFuture<>();
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
+        FoliaSchedulers.runPlayer(plugin, player, () -> {
             try {
                 Pet pet = findPet(player, petId).orElse(null);
                 if (pet == null || !pet.show()) {
@@ -663,7 +776,7 @@ public class PetManger {
             throw new IllegalArgumentException("player cannot be null");
         }
         CompletableFuture<Boolean> future = new CompletableFuture<>();
-        plugin.getServer().getScheduler().runTask(plugin, () -> {
+        FoliaSchedulers.runPlayer(plugin, player, () -> {
             try {
                 Pet selectedPet = findPet(player, petId).orElse(null);
                 if (selectedPet == null) {
@@ -723,7 +836,7 @@ public class PetManger {
         if (playerUuid == null) {
             throw new IllegalArgumentException("playerUuid cannot be null");
         }
-        return pets.computeIfAbsent(playerUuid, ignored -> new ArrayList<>());
+        return pets.computeIfAbsent(playerUuid, ignored -> new CopyOnWriteArrayList<>());
     }
 
     public void loadPets(Player player) {
@@ -759,18 +872,21 @@ public class PetManger {
         CompletableFuture<Void> future = new CompletableFuture<>();
         plugin.getPetUtil().getPetsAsync(player)
                 .whenComplete((loadedPets, throwable) -> {
-                    if (throwable != null) {
-                        future.completeExceptionally(throwable);
-                        return;
-                    }
-                    if (!player.isOnline()) {
-                        future.complete(null);
-                        return;
-                    }
-                    List<Pet> petsToLoad = new ArrayList<>(loadedPets);
-                    pets.put(player.getUniqueId(), petsToLoad);
-                    for (Pet pet : new ArrayList<>(petsToLoad)) {
-                        if (pet.show()) {
+                    FoliaSchedulers.runPlayer(plugin, player, () -> {
+                        if (throwable != null) {
+                            future.completeExceptionally(throwable);
+                            return;
+                        }
+                        if (!player.isOnline()) {
+                            future.complete(null);
+                            return;
+                        }
+                        List<Pet> petsToLoad = new CopyOnWriteArrayList<>(loadedPets);
+                        pets.put(player.getUniqueId(), petsToLoad);
+                        for (Pet pet : List.copyOf(petsToLoad)) {
+                            if (!pet.show()) {
+                                continue;
+                            }
                             Pet shownPet;
                             try {
                                 shownPet = showPetInternal(player, pet, false, true);
@@ -785,8 +901,8 @@ public class PetManger {
                                 executePetEvent(player, shownPet, "on-join-show");
                             }
                         }
-                    }
-                    future.complete(null);
+                        future.complete(null);
+                    });
                 });
         return future;
     }
@@ -1016,29 +1132,39 @@ public class PetManger {
 
     private void addPetToMemory(Player player, Pet pet) {
         UUID playerUuid = player.getUniqueId();
-        List<Pet> playerPets = pets.computeIfAbsent(playerUuid, ignored -> new ArrayList<>());
-        if (!(playerPets instanceof ArrayList<?>)) {
-            playerPets = new ArrayList<>(playerPets);
-            pets.put(playerUuid, playerPets);
-        }
+        List<Pet> playerPets = pets.computeIfAbsent(playerUuid, ignored -> new CopyOnWriteArrayList<>());
         playerPets.add(pet);
     }
 
     private void removeEntity(Pet pet) {
-        cleanupBlindBoxRevealInteraction(pet == null || pet.owner() == null ? null : pet.owner().getUniqueId(), pet == null ? 0L : pet.id());
-        clearAutoTravel(pet == null ? null : pet.owner(), pet == null ? 0L : pet.id());
-        Entity entity = pet.entity();
-        if (entity != null && !entity.isDead()) {
-            if (entity instanceof Player playerEntity && playerEntity != pet.owner()) {
-                if (NmsPlayerPetController.isAvailable()) {
-                    NmsPlayerPetController.remove(playerEntity);
-                } else {
-                    entity.remove();
-                }
-                return;
-            }
-            entity.remove();
+        if (pet == null) {
+            return;
         }
+        cleanupBlindBoxRevealInteraction(pet.owner() == null ? null : pet.owner().getUniqueId(), pet.id());
+        clearAutoTravel(pet.owner(), pet.id());
+        Entity entity = pet.entity();
+        if (entity != null) {
+            FoliaSchedulers.runEntity(plugin, entity, () -> removePetEntity(pet, entity));
+        }
+    }
+
+    private void removePetEntity(Pet pet, Entity entity) {
+        if (!entity.isValid() || entity.isDead()) {
+            return;
+        }
+        if (entity instanceof Player playerEntity && playerEntity != pet.owner()) {
+            if (NmsPlayerPetController.isAvailable()) {
+                NmsPlayerPetController.remove(playerEntity);
+            } else {
+                entity.remove();
+            }
+            return;
+        }
+        entity.remove();
+    }
+
+    private boolean canAccessEntity(Entity entity) {
+        return entity != null && (!QcPet.isFolia() || plugin.getServer().isOwnedByCurrentRegion(entity));
     }
 
     private void tickVisiblePets() {
@@ -1047,53 +1173,64 @@ public class PetManger {
             if (player == null || !player.isOnline()) {
                 continue;
             }
-            for (Pet pet : new ArrayList<>(entry.getValue())) {
-                if (!pet.show()) {
-                    continue;
+            List<Pet> visiblePets = List.copyOf(entry.getValue());
+            FoliaSchedulers.runPlayer(plugin, player, () -> {
+                for (Pet pet : visiblePets) {
+                    tickVisiblePet(player, entry.getKey(), pet);
                 }
-                if (isTemporarilyHidden(entry.getKey(), pet.id())) {
-                    if (plugin.getServer().getCurrentTick() % (20L * 60L) == 0L) {
-                        applyPassiveExperience(player, pet);
-                    }
-                    continue;
-                }
-                Entity entity = pet.entity();
-                if (entity == null || !entity.isValid() || entity.isDead()) {
-                    try {
-                        showPetInternal(player, pet, false, false);
-                    } catch (Exception exception) {
-                        handlePetSpawnFailure(player, pet, exception, false);
-                    }
-                    continue;
-                }
-                syncBossEntityState(entity);
-                Pet updatedPet = applyEntityState(player, pet, entity);
-                if (updatedPet != pet) {
-                    replacePet(player, updatedPet);
-                    pet = updatedPet;
-                    entity = updatedPet.entity();
-                }
-                followOwner(player, pet, entity);
-                syncBlindBoxRevealInteraction(pet);
-                Pet currentPet = executeTickEvent(player, pet);
-                if (currentPet != null && currentPet != pet) {
-                    pet = currentPet;
-                    entity = currentPet.entity();
-                    if (entity == null || !entity.isValid() || entity.isDead()) {
-                        continue;
-                    }
-                }
-                if (needsBath(pet)) {
-                    spawnDirtyParticles(entity);
-                }
-                if (needsFeed(pet)) {
-                    spawnHungryParticles(entity);
-                }
-                Pet remindedPet = maybeSendCareReminder(player, pet);
-                if (remindedPet != pet) {
-                    replacePet(player, remindedPet);
-                }
+            });
+        }
+    }
+
+    private void tickVisiblePet(Player player, UUID playerUuid, Pet pet) {
+        if (!pet.show()) {
+            return;
+        }
+        if (isTemporarilyHidden(playerUuid, pet.id())) {
+            if (plugin.getServer().getCurrentTick() % (20L * 60L) == 0L) {
+                applyPassiveExperience(player, pet);
             }
+            return;
+        }
+        Entity entity = pet.entity();
+        if (entity != null && QcPet.isFolia() && !plugin.getServer().isOwnedByCurrentRegion(entity)) {
+            FoliaSchedulers.teleport(entity, player.getLocation());
+            return;
+        }
+        if (entity == null || !entity.isValid() || entity.isDead()) {
+            try {
+                showPetInternal(player, pet, false, false);
+            } catch (Exception exception) {
+                handlePetSpawnFailure(player, pet, exception, false);
+            }
+            return;
+        }
+        syncBossEntityState(entity);
+        Pet updatedPet = applyEntityState(player, pet, entity);
+        if (updatedPet != pet) {
+            replacePet(player, updatedPet);
+            pet = updatedPet;
+            entity = updatedPet.entity();
+        }
+        followOwner(player, pet, entity);
+        syncBlindBoxRevealInteraction(pet);
+        Pet currentPet = executeTickEvent(player, pet);
+        if (currentPet != null && currentPet != pet) {
+            pet = currentPet;
+            entity = currentPet.entity();
+            if (entity == null || !entity.isValid() || entity.isDead()) {
+                return;
+            }
+        }
+        if (needsBath(pet)) {
+            spawnDirtyParticles(entity);
+        }
+        if (needsFeed(pet)) {
+            spawnHungryParticles(entity);
+        }
+        Pet remindedPet = maybeSendCareReminder(player, pet);
+        if (remindedPet != pet) {
+            replacePet(player, remindedPet);
         }
     }
 
@@ -1478,7 +1615,7 @@ public class PetManger {
             return;
         }
         if (!entity.getWorld().equals(player.getWorld())) {
-            entity.teleport(player.getLocation());
+            FoliaSchedulers.teleport(entity, player.getLocation());
             return;
         }
 
@@ -1490,11 +1627,11 @@ public class PetManger {
                 if (NmsPlayerPetController.isAvailable()) {
                     NmsPlayerPetController.teleport(playerEntity, targetLocation);
                 } else {
-                    entity.teleport(targetLocation);
+                    FoliaSchedulers.teleport(entity, targetLocation);
                 }
                 return;
             }
-            entity.teleport(targetLocation);
+            FoliaSchedulers.teleport(entity, targetLocation);
             return;
         }
 
@@ -1508,14 +1645,14 @@ public class PetManger {
         if (entity instanceof Mob mob) {
             if (flyingPet) {
                 if (targetHorizontalDistanceSquared >= GROUND_SLOT_TELEPORT_DISTANCE_SQUARED) {
-                    entity.teleport(targetLocation);
+                    FoliaSchedulers.teleport(entity, targetLocation);
                     return;
                 }
                 NmsPetAiController.moveFlyingPet(mob, targetLocation, getFollowFlyingSpeed(pet));
                 return;
             }
             if (targetHorizontalDistanceSquared >= GROUND_SLOT_TELEPORT_DISTANCE_SQUARED) {
-                entity.teleport(targetLocation);
+                FoliaSchedulers.teleport(entity, targetLocation);
                 return;
             }
             NmsPetAiController.moveGroundPet(mob, targetLocation, getFollowGroundSpeed(pet));
@@ -1525,11 +1662,11 @@ public class PetManger {
             if (NmsPlayerPetController.isAvailable()) {
                 NmsPlayerPetController.teleport(playerEntity, targetLocation);
             } else {
-                entity.teleport(targetLocation);
+                FoliaSchedulers.teleport(entity, targetLocation);
             }
             return;
         }
-        entity.teleport(targetLocation);
+        FoliaSchedulers.teleport(entity, targetLocation);
     }
 
     private boolean handleMountedMovement(Player owner, Pet pet, Entity entity, boolean flyingPet) {
@@ -2248,14 +2385,14 @@ public class PetManger {
         entity.getWorld().playSound(location, Sound.ENTITY_PLAYER_SPLASH, 0.8F, 1.1F);
         entity.getWorld().playSound(location, Sound.BLOCK_BUBBLE_COLUMN_WHIRLPOOL_INSIDE, 0.7F, 1.3F);
         for (int tick = 0; tick < 20; tick += 5) {
-            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            FoliaSchedulers.runEntityLater(plugin, entity, tick, () -> {
                 if (!entity.isValid() || entity.isDead()) {
                     return;
                 }
                 Location current = entity.getLocation().clone().add(0, Math.max(0.5D, entity.getHeight() * 0.5D), 0);
                 entity.getWorld().spawnParticle(Particle.BUBBLE, current, 18, 0.3D, 0.3D, 0.3D, 0.03D);
                 entity.getWorld().spawnParticle(Particle.CLOUD, current, 10, 0.25D, 0.25D, 0.25D, 0.01D);
-            }, tick);
+            });
         }
     }
 
@@ -2272,13 +2409,13 @@ public class PetManger {
         }
         long safeDuration = Math.max(1L, durationTicks);
         for (long tick = 0L; tick <= safeDuration; tick += 4L) {
-            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            FoliaSchedulers.runEntityLater(plugin, entity, tick, () -> {
                 if (!entity.isValid() || entity.isDead()) {
                     return;
                 }
                 Location current = entity.getLocation().clone().add(0, Math.max(0.8D, entity.getHeight() * 0.8D), 0);
                 entity.getWorld().spawnParticle(Particle.HEART, current, 2, 0.28D, 0.22D, 0.28D, 0D);
-            }, tick);
+            });
         }
     }
 
@@ -2554,21 +2691,21 @@ public class PetManger {
 
         for (long tick = 0L; tick <= BLIND_BOX_REVEAL_DURATION_TICKS; tick += 4L) {
             long currentTick = tick;
-            plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+            FoliaSchedulers.runEntityLater(plugin, revealEntity, tick, () -> {
                 if (!revealEntity.isValid() || revealEntity.isDead()) {
                     return;
                 }
                 Location location = revealEntity.getLocation().clone();
                 location.setYaw(location.getYaw() + 24F);
-                revealEntity.teleport(location);
+                FoliaSchedulers.teleport(revealEntity, location);
                 Location effectLocation = revealEntity.getLocation().clone().add(0, Math.max(0.8D, revealEntity.getHeight() * 0.8D), 0);
                 revealEntity.getWorld().spawnParticle(Particle.CLOUD, effectLocation, 14, 0.35D, 0.45D, 0.35D, 0.01D);
                 revealEntity.getWorld().spawnParticle(Particle.POOF, effectLocation, 8, 0.25D, 0.3D, 0.25D, 0.01D);
                 revealEntity.getWorld().playSound(effectLocation, Sound.BLOCK_CHEST_OPEN, 0.7F, 1.0F + (currentTick * 0.005F));
-            }, tick);
+            });
         }
 
-        plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
+        FoliaSchedulers.runPlayerLater(plugin, player, BLIND_BOX_REVEAL_DURATION_TICKS + 2L, () -> {
             if (!player.isOnline()) {
                 removeEntity(pet);
                 return;
@@ -2582,7 +2719,7 @@ public class PetManger {
             if (shownPet != null && shownPet.entity() != null) {
                 playLoveEffect(shownPet.entity(), 12L);
             }
-        }, BLIND_BOX_REVEAL_DURATION_TICKS + 2L);
+        });
     }
 
     private void spawnBlindBoxRevealInteraction(Player player, Pet pet, Entity revealEntity) {
@@ -2616,8 +2753,12 @@ public class PetManger {
         }
         blindBoxRevealInteractions.remove(interaction.interactionEntityUuid());
         Entity interactionEntity = plugin.getServer().getEntity(interaction.interactionEntityUuid());
-        if (interactionEntity != null && interactionEntity.isValid() && !interactionEntity.isDead()) {
-            interactionEntity.remove();
+        if (interactionEntity != null) {
+            FoliaSchedulers.runEntity(plugin, interactionEntity, () -> {
+                if (interactionEntity.isValid() && !interactionEntity.isDead()) {
+                    interactionEntity.remove();
+                }
+            });
         }
     }
 
@@ -2631,11 +2772,18 @@ public class PetManger {
         }
         Entity petEntity = pet.entity();
         Entity interactionEntity = plugin.getServer().getEntity(interaction.interactionEntityUuid());
-        if (petEntity == null || !petEntity.isValid() || petEntity.isDead() || interactionEntity == null || !interactionEntity.isValid() || interactionEntity.isDead()) {
+        if (petEntity == null || !petEntity.isValid() || petEntity.isDead() || interactionEntity == null) {
             cleanupBlindBoxRevealInteraction(pet.owner().getUniqueId(), pet.id());
             return;
         }
-        interactionEntity.teleport(petEntity.getLocation());
+        Location petLocation = petEntity.getLocation().clone();
+        FoliaSchedulers.runEntity(plugin, interactionEntity, () -> {
+            if (!interactionEntity.isValid() || interactionEntity.isDead()) {
+                blindBoxRevealInteractions.remove(interaction.interactionEntityUuid());
+                return;
+            }
+            FoliaSchedulers.teleport(interactionEntity, petLocation);
+        });
     }
 
     private Pet executeTickEvent(Player player, Pet pet) {
@@ -2666,7 +2814,7 @@ public class PetManger {
 
         Pet expUpdated = plugin.getPetProgressService().addExperience(pet, petConfig.expPerMinute());
         Pet updated = markPassiveExpMinute(expUpdated, currentMinute);
-        if (updated.entity() != null && updated.entity().isValid()) {
+        if (canAccessEntity(updated.entity()) && updated.entity().isValid()) {
             updated = applyEntityState(player, updated, updated.entity());
         }
         replacePet(player, updated);
@@ -2903,7 +3051,7 @@ public class PetManger {
     }
 
     private void markTemporaryHidden(UUID playerUuid, long petId) {
-        List<Long> hiddenIds = temporarilyHiddenPets.computeIfAbsent(playerUuid, ignored -> new ArrayList<>());
+        List<Long> hiddenIds = temporarilyHiddenPets.computeIfAbsent(playerUuid, ignored -> new CopyOnWriteArrayList<>());
         if (!hiddenIds.contains(petId)) {
             hiddenIds.add(petId);
         }

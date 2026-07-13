@@ -172,4 +172,13 @@ public class QcPet extends JavaPlugin {
     public PetBackpackService getPetBackpackService() {
         return petBackpackService;
     }
+
+    public static boolean isFolia() {
+        try {
+            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+            return true;
+        } catch (ClassNotFoundException e) {
+            return false;
+        }
+    }
 }
