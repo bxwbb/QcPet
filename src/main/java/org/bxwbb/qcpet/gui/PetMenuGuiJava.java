@@ -36,6 +36,7 @@ public class PetMenuGuiJava implements PetMenuGui {
     private static final int HIDE_SLOT = 33;
     private static final int BATH_SLOT = 34;
     private static final int FEED_SLOT = 35;
+    private static final int EQUIPMENT_SLOT = 38;
     private static final int BACKPACK_SLOT = 39;
     private static final int TRAVEL_SLOT = 40;
     private static final int MUTE_SLOT = 41;
@@ -77,6 +78,7 @@ public class PetMenuGuiJava implements PetMenuGui {
         ));
         inventory.setItem(BATH_SLOT, createBathItem(pet));
         inventory.setItem(FEED_SLOT, createFeedItem(pet));
+        inventory.setItem(EQUIPMENT_SLOT, createEquipmentItem());
         inventory.setItem(BACKPACK_SLOT, createBackpackItem(pet));
         inventory.setItem(TRAVEL_SLOT, createActionItem(
                 Material.COMPASS,
@@ -137,6 +139,17 @@ public class PetMenuGuiJava implements PetMenuGui {
                 return;
             }
             plugin.getGuiManager().openPetBackpack(player, pet);
+            return;
+        }
+
+        if (slot == EQUIPMENT_SLOT) {
+            Pet pet = plugin.getPetManger().getPet(player, holder.petId());
+            if (pet == null) {
+                send(player, "&c鏈壘鍒板搴斿疇鐗┿€?");
+                player.closeInventory();
+                return;
+            }
+            plugin.getGuiManager().openPetEquipment(player, pet);
             return;
         }
 
@@ -377,6 +390,14 @@ public class PetMenuGuiJava implements PetMenuGui {
                         "最大可解锁: " + maxSlots + " 格",
                         "点击打开宠物背包"
                 )
+        );
+    }
+
+    private ItemStack createEquipmentItem() {
+        return createActionItem(
+                Material.IRON_CHESTPLATE,
+                "宠物盔甲栏",
+                List.of("打开宠物装备栏", "可管理头盔、胸甲、护腿、靴子、主手、副手")
         );
     }
 

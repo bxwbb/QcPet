@@ -1270,6 +1270,12 @@ public class PetManger {
             playerEntity.setCollidable(false);
             playerEntity.setSilent(true);
         }
+        if (entity instanceof Creeper creeper) {
+            creeper.setPowered(false);
+            creeper.setMaxFuseTicks(Integer.MAX_VALUE);
+            creeper.setExplosionRadius(0);
+        }
+        applyPetDataToEntity(updatedPet, entity);
         if (entity instanceof Mob mob) {
             NmsPetAiController.stripMobAi(mob);
             mob.setTarget(null);
@@ -1278,12 +1284,6 @@ public class PetManger {
             wolf.setAngry(false);
             wolf.setSitting(false);
         }
-        if (entity instanceof Creeper creeper) {
-            creeper.setPowered(false);
-            creeper.setMaxFuseTicks(Integer.MAX_VALUE);
-            creeper.setExplosionRadius(0);
-        }
-        applyPetDataToEntity(updatedPet, entity);
         return captureEntityStateIfNecessary(updatedPet, entity);
     }
 

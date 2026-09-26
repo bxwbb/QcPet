@@ -5,12 +5,15 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.Mob;
 
 import java.lang.reflect.Method;
-import java.util.Set;
+import java.util.Collections;
+import java.util.Map;
+import java.util.WeakHashMap;
 import java.util.function.Predicate;
 
 public final class NmsPetAiController {
 
     private static final String AI_STRIPPED_TAG = "qcpet_ai_stripped";
+    private static final Map<Mob, Boolean> STRIPPED_MOBS = Collections.synchronizedMap(new WeakHashMap<>());
     private static final double GROUND_SPEED = 1.05D;
     private static final double FLYING_SPEED_NEAR = 1.2D;
     private static final double FLYING_SPEED_MID = 1.8D;
@@ -56,20 +59,35 @@ public final class NmsPetAiController {
         if (!(entity instanceof Mob mob)) {
             return;
         }
-        Set<String> tags = mob.getScoreboardTags();
-        if (tags.contains(AI_STRIPPED_TAG)) {
+        if (STRIPPED_MOBS.containsKey(mob)) {
+            clearTarget(mob);
             return;
         }
-
         try {
             Object handle = CRAFT_MOB_GET_HANDLE.invoke(mob);
             Predicate<Object> removeAll = ignored -> true;
 
             MOB_REMOVE_ALL_GOALS.invoke(handle, removeAll);
             MOB_SET_TARGET.invoke(handle, new Object[]{null});
-            mob.addScoreboardTag(AI_STRIPPED_TAG);
+            if (!mob.getScoreboardTags().contains(AI_STRIPPED_TAG)) {
+                mob.addScoreboardTag(AI_STRIPPED_TAG);
+            }
+            STRIPPED_MOBS.put(mob, Boolean.TRUE);
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("Failed to strip mob AI via NMS", exception);
+        }
+    }
+
+    public static boolean isTaggedPetMob(Entity entity) {
+        return entity instanceof Mob mob && mob.getScoreboardTags().contains(AI_STRIPPED_TAG);
+    }
+
+    private static void clearTarget(Mob mob) {
+        try {
+            Object handle = CRAFT_MOB_GET_HANDLE.invoke(mob);
+            MOB_SET_TARGET.invoke(handle, new Object[]{null});
+        } catch (ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to clear pet target via NMS", exception);
         }
     }
 

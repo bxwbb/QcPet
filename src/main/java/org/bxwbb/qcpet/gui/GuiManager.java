@@ -26,6 +26,7 @@ public class GuiManager implements Listener {
     private final SelectPetGui javaSelectPetGui;
     private final SelectPetGui bedrockSelectPetGui;
     private final PetBackpackGui petBackpackGui;
+    private final PetEquipmentGui petEquipmentGui;
 
     public GuiManager(QcPet plugin) {
         this.plugin = plugin;
@@ -34,6 +35,7 @@ public class GuiManager implements Listener {
         this.javaSelectPetGui = new SelectPetGuiJava(plugin, javaPetMenuGui);
         this.bedrockSelectPetGui = new SelectPetGuiBedrock(plugin, javaPetMenuGui);
         this.petBackpackGui = new PetBackpackGui(plugin);
+        this.petEquipmentGui = new PetEquipmentGui(plugin);
         plugin.getServer().getPluginManager().registerEvents(this, plugin);
     }
 
@@ -82,28 +84,33 @@ public class GuiManager implements Listener {
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
+
+        InventoryHolder holder = event.getInventory().getHolder();
+        if (petBackpackGui.isBackpack(holder)) {
+            petBackpackGui.handleInventoryClick(player, event);
+            return;
+        }
+        if (petEquipmentGui.isEquipmentMenu(holder)) {
+            petEquipmentGui.handleInventoryClick(player, event);
+            return;
+        }
         if (event.getClickedInventory() == null || event.getClickedInventory().getType() == InventoryType.PLAYER) {
             return;
         }
 
-        InventoryHolder holder = event.getInventory().getHolder();
         if (javaPetMenuGui.isPetMenu(holder)) {
             event.setCancelled(true);
             javaPetMenuGui.handleInventoryClick(player, event);
             return;
         }
-        if (petBackpackGui.isBackpack(holder)) {
-            petBackpackGui.handleInventoryClick(player, event);
+        if (javaSelectPetGui.isSelectMenu(holder)) {
+            event.setCancelled(true);
+            javaSelectPetGui.handleInventoryClick(player, event);
             return;
         }
         if (bedrockPetMenuGui.isPetMenu(holder)) {
             event.setCancelled(true);
             bedrockPetMenuGui.handleInventoryClick(player, event);
-            return;
-        }
-        if (javaSelectPetGui.isSelectMenu(holder)) {
-            event.setCancelled(true);
-            javaSelectPetGui.handleInventoryClick(player, event);
             return;
         }
         if (bedrockSelectPetGui.isSelectMenu(holder)) {
@@ -121,11 +128,15 @@ public class GuiManager implements Listener {
     @EventHandler
     public void onInventoryDrag(InventoryDragEvent event) {
         petBackpackGui.handleInventoryDrag(event);
+        petEquipmentGui.handleInventoryDrag(event);
     }
 
     @EventHandler
     public void onInventoryClose(InventoryCloseEvent event) {
         petBackpackGui.handleInventoryClose(event.getInventory());
+        if (event.getPlayer() instanceof Player player) {
+            petEquipmentGui.handleInventoryClose(player, event.getInventory());
+        }
     }
 
     @EventHandler
@@ -159,6 +170,10 @@ public class GuiManager implements Listener {
 
     public void openPetBackpack(Player player, Pet pet) {
         petBackpackGui.open(player, pet);
+    }
+
+    public void openPetEquipment(Player player, Pet pet) {
+        petEquipmentGui.open(player, pet);
     }
 
     private PetMenuGui getPetMenuGui(Player player) {

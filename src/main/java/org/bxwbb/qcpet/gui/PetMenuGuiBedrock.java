@@ -24,6 +24,7 @@ public class PetMenuGuiBedrock implements PetMenuGui {
     private static final String IMAGE_PATH_HIDE = "textures/ui/cancel";
     private static final String IMAGE_PATH_BATH = "textures/items/bucket_water";
     private static final String IMAGE_PATH_FEED = "textures/items/beef_cooked";
+    private static final String IMAGE_PATH_EQUIPMENT = "textures/items/iron_chestplate";
     private static final String IMAGE_PATH_BACKPACK = "textures/items/chest";
     private static final String IMAGE_PATH_TRAVEL = "textures/items/compass_item";
     private static final String IMAGE_PATH_MUTE = "textures/ui/sound_glyph_color_2x";
@@ -76,6 +77,7 @@ public class PetMenuGuiBedrock implements PetMenuGui {
         builder.button("隐藏宠物", FormImage.Type.PATH, IMAGE_PATH_HIDE);
         builder.button(needsBath ? "给宠物洗澡" : "宠物很干净", FormImage.Type.PATH, IMAGE_PATH_BATH);
         builder.button(needsFeed ? "给宠物喂食" : "宠物不饿", FormImage.Type.PATH, IMAGE_PATH_FEED);
+        builder.button("宠物盔甲栏", FormImage.Type.PATH, IMAGE_PATH_EQUIPMENT);
         builder.button("宠物背包 " + unlockedBackpackSlots + "/" + maxBackpackSlots, FormImage.Type.PATH, IMAGE_PATH_BACKPACK);
         builder.button("去往目标", FormImage.Type.PATH, IMAGE_PATH_TRAVEL);
         builder.button(muted ? "取消静音" : "静音宠物", FormImage.Type.PATH, IMAGE_PATH_MUTE);
@@ -87,16 +89,17 @@ public class PetMenuGuiBedrock implements PetMenuGui {
 
         builder.validResultHandler(response -> FoliaSchedulers.runPlayer(plugin, player, () -> {
             switch (response.clickedButtonId()) {
-                case 0, 9 -> openPetMenu(player, currentPet);
+                case 0, 10 -> openPetMenu(player, currentPet);
                 case 1 -> openRenameForm(player, currentPet);
                 case 2 -> hidePet(player, currentPet.id());
                 case 3 -> handleBath(player, currentPet.id());
                 case 4 -> handleFeed(player, currentPet.id());
-                case 5 -> plugin.getGuiManager().openPetBackpack(player, currentPet);
-                case 6 -> openTravelForm(player, currentPet);
-                case 7 -> toggleMute(player, currentPet.id());
-                case 8 -> toggleRideable(player, currentPet.id());
-                case 10 -> plugin.getGuiManager().openPetSelectMenu(player);
+                case 5 -> plugin.getGuiManager().openPetEquipment(player, currentPet);
+                case 6 -> plugin.getGuiManager().openPetBackpack(player, currentPet);
+                case 7 -> openTravelForm(player, currentPet);
+                case 8 -> toggleMute(player, currentPet.id());
+                case 9 -> toggleRideable(player, currentPet.id());
+                case 11 -> plugin.getGuiManager().openPetSelectMenu(player);
                 default -> {
                 }
             }

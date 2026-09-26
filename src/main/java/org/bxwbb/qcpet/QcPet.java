@@ -23,6 +23,8 @@ import java.util.List;
 
 public class QcPet extends JavaPlugin {
 
+    private static final boolean FOLIA = detectFolia();
+
     private MySqlSaveUtil mySqlSaveUtil;
     private PetUtil petUtil;
     private PetManger petManger;
@@ -174,10 +176,18 @@ public class QcPet extends JavaPlugin {
     }
 
     public static boolean isFolia() {
+        return FOLIA;
+    }
+
+    private static boolean detectFolia() {
         try {
-            Class.forName("io.papermc.paper.threadedregions.RegionizedServer");
+            Class.forName(
+                    "io.papermc.paper.threadedregions.RegionizedServer",
+                    false,
+                    QcPet.class.getClassLoader()
+            );
             return true;
-        } catch (ClassNotFoundException e) {
+        } catch (ClassNotFoundException ignored) {
             return false;
         }
     }
