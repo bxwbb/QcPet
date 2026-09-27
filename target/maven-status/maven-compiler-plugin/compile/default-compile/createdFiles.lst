@@ -1,3 +1,4 @@
+org\bxwbb\qcpet\utils\saveUtil\LocalFileSaveUtil.class
 org\bxwbb\qcpet\utils\saveUtil\MySqlSaveUtil.class
 org\bxwbb\qcpet\gui\SelectPetGui.class
 org\bxwbb\qcpet\utils\FoliaSchedulers.class
@@ -10,6 +11,7 @@ org\bxwbb\qcpet\math\ArgumentNode.class
 org\bxwbb\qcpet\utils\saveUtil\SaveException.class
 org\bxwbb\qcpet\math\StaticInvoker$StaticMember.class
 org\bxwbb\qcpet\math\UnaryNode.class
+org\bxwbb\qcpet\utils\saveUtil\PetStorage.class
 org\bxwbb\qcpet\gui\PetEquipmentGui$EquipmentGetter.class
 org\bxwbb\qcpet\math\NullNode.class
 org\bxwbb\qcpet\math\StaticAccessNode.class
@@ -22,6 +24,7 @@ org\bxwbb\qcpet\gui\PetMenuGui.class
 org\bxwbb\qcpet\math\CastNode.class
 org\bxwbb\qcpet\utils\PetUtil$1.class
 org\bxwbb\qcpet\utils\PetUtil.class
+org\bxwbb\qcpet\pet\FancyNpcPetService.class
 org\bxwbb\qcpet\gui\GuiManager.class
 org\bxwbb\qcpet\gui\PetBackpackGui$PetBackpackHolder.class
 org\bxwbb\qcpet\utils\PetUtil$UnsafeSupplier.class
@@ -46,6 +49,7 @@ org\bxwbb\qcpet\gui\PetMenuGuiJava$PetMenuHolder.class
 org\bxwbb\qcpet\pet\QcPetPlaceholderExpansion.class
 org\bxwbb\qcpet\math\StaticInvoker.class
 org\bxwbb\qcpet\event\PetProtectionListener.class
+org\bxwbb\qcpet\utils\FancyNpcsDownloader.class
 org\bxwbb\qcpet\gui\PetEquipmentGui$EquipmentAccessor.class
 org\bxwbb\qcpet\gui\PetMenuGuiBedrock.class
 org\bxwbb\qcpet\pet\NmsPlayerPetController$Adapter.class

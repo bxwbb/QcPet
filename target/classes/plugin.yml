@@ -1,5 +1,5 @@
 name: QcPet
-version: 1.2.2
+version: 1.3.0
 main: org.bxwbb.qcpet.QcPet
 api-version: "1.21"
 author: BXWBB
@@ -10,6 +10,7 @@ softdepend:
   - PlaceholderAPI
   - QcLevel
   - database
+  - FancyNpcs
 
 commands:
   qcpet:

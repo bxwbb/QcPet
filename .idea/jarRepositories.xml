@@ -47,6 +47,11 @@
       <option name="url" value="https://artifactory.papermc.io/artifactory/snapshots" />
     </remote-repository>
     <remote-repository>
+      <option name="id" value="lushplugins-releases" />
+      <option name="name" value="lushplugins-releases" />
+      <option name="url" value="https://repo.lushplugins.org/releases/" />
+    </remote-repository>
+    <remote-repository>
       <option name="id" value="opencollab-releases" />
       <option name="name" value="opencollab-releases" />
       <option name="url" value="https://repo.opencollab.dev/main/" />

@@ -10,6 +10,7 @@ softdepend:
   - PlaceholderAPI
   - QcLevel
   - database
+  - FancyNpcs
 
 commands:
   qcpet:

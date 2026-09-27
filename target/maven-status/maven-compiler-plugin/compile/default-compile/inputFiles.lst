@@ -27,6 +27,7 @@ E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\math\StaticAccessNode.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\math\StaticInvoker.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\math\StringNode.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\math\UnaryNode.java
+E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\pet\FancyNpcPetService.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\pet\NmsPetAiController.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\pet\NmsPlayerPetController.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\pet\Pet.java
@@ -38,8 +39,11 @@ E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\pet\PetManger.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\pet\PetProgressService.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\pet\QcPetPlaceholderExpansion.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\QcPet.java
+E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\utils\FancyNpcsDownloader.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\utils\FoliaSchedulers.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\utils\PetUtil.java
+E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\utils\saveUtil\LocalFileSaveUtil.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\utils\saveUtil\MySqlSaveUtil.java
+E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\utils\saveUtil\PetStorage.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\utils\saveUtil\SaveException.java
 E:\QianQueYunTing\QcPet\src\main\java\org\bxwbb\qcpet\utils\TextComponentUtil.java

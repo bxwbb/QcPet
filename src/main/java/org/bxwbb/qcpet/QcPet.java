@@ -11,8 +11,11 @@ import org.bxwbb.qcpet.pet.PetBackpackService;
 import org.bxwbb.qcpet.pet.PetManger;
 import org.bxwbb.qcpet.pet.PetProgressService;
 import org.bxwbb.qcpet.pet.QcPetPlaceholderExpansion;
+import org.bxwbb.qcpet.utils.FancyNpcsDownloader;
 import org.bxwbb.qcpet.utils.PetUtil;
+import org.bxwbb.qcpet.utils.saveUtil.LocalFileSaveUtil;
 import org.bxwbb.qcpet.utils.saveUtil.MySqlSaveUtil;
+import org.bxwbb.qcpet.utils.saveUtil.PetStorage;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -25,13 +28,20 @@ public class QcPet extends JavaPlugin {
 
     private static final boolean FOLIA = detectFolia();
 
-    private MySqlSaveUtil mySqlSaveUtil;
+    private PetStorage petStorage;
     private PetUtil petUtil;
     private PetManger petManger;
     private GuiManager guiManager;
     private PetConfigManger petConfigManger;
     private PetProgressService petProgressService;
     private PetBackpackService petBackpackService;
+
+    @Override
+    public void onLoad() {
+        super.onLoad();
+        // 在 onLoad 阶段自动下载并加载 FancyNpcs，确保 onEnable 时 PLAYER 宠物可用
+        FancyNpcsDownloader.ensurePresent();
+    }
 
     @Override
     public void onEnable() {
@@ -70,8 +80,8 @@ public class QcPet extends JavaPlugin {
         if (petManger != null) {
             petManger.clear();
         }
-        if (mySqlSaveUtil != null) {
-            mySqlSaveUtil.close();
+        if (petStorage != null) {
+            petStorage.close();
         }
         super.onDisable();
     }
@@ -80,16 +90,31 @@ public class QcPet extends JavaPlugin {
         reloadConfig();
         FileConfiguration config = getConfig();
         getLogger().info("已加载配置文件: " + config.getString("config-version"));
-        getLogger().info("已启用 SQL 保存");
-        MySqlSaveUtil oldSaveUtil = mySqlSaveUtil;
-        mySqlSaveUtil = new MySqlSaveUtil(
-                requireJdbcUrl(config.getString("save.sql.url")),
-                requireConfigValue(config, "save.sql.user"),
-                config.getString("save.sql.password", ""),
-                requireConfigValue(config, "save.sql.table")
-        );
-        if (oldSaveUtil != null) {
-            oldSaveUtil.close();
+
+        PetStorage oldStorage = petStorage;
+        try {
+            getLogger().info("尝试连接 MySQL 数据库...");
+            petStorage = new MySqlSaveUtil(
+                    requireJdbcUrl(config.getString("save.sql.url")),
+                    requireConfigValue(config, "save.sql.user"),
+                    config.getString("save.sql.password", ""),
+                    requireConfigValue(config, "save.sql.table")
+            );
+            getLogger().info("MySQL 连接成功，使用数据库存储");
+        } catch (Exception mysqlError) {
+            getLogger().warning("MySQL 连接失败，降级为本地文件存储: " + mysqlError.getMessage());
+            try {
+                petStorage = new LocalFileSaveUtil(this);
+            } catch (Exception localError) {
+                getLogger().severe("本地文件存储也初始化失败，插件将无法保存宠物数据: " + localError.getMessage());
+                petStorage = null;
+            }
+        }
+        if (oldStorage != null) {
+            try {
+                oldStorage.close();
+            } catch (Exception ignored) {
+            }
         }
     }
 
@@ -142,8 +167,16 @@ public class QcPet extends JavaPlugin {
         return value;
     }
 
+    /**
+     * @deprecated 请使用 {@link #getPetStorage()}
+     */
+    @Deprecated
     public MySqlSaveUtil getMySqlSaveUtil() {
-        return mySqlSaveUtil;
+        return petStorage instanceof MySqlSaveUtil mysql ? mysql : null;
+    }
+
+    public PetStorage getPetStorage() {
+        return petStorage;
     }
 
     public PetUtil getPetUtil() {

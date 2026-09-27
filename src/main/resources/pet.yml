@@ -412,3 +412,26 @@ pets:
     events:
       on-spawn:
         - "[message] &8凋零宠物已出战，它不会仇恨任何人"
+
+  # PLAYER 类型宠物：基于 FancyNpcs packet NPC，支持皮肤
+  # 需要服务器安装 FancyNpcs 插件
+  companion:
+    type: PLAYER
+    movementMultiplier: 1.1
+    displayName: "&a勇者伙伴"
+    rarity: "&b珍稀"
+    modelId: ""
+    times: 1.1
+    scaleRequirement: "0.85 + (%2% * 0.015)"
+    expPerMinute: 3
+    bathRewardExp: 22
+    feedRewardExp: 15
+    levelExpRequirement: "110 + (%1% * 22)"
+    # 皮肤：支持玩家名 / UUID / 皮肤图片 URL / 本地文件路径（相对 plugins/FancyNpcs/skins）
+    skin: "BXWBB"
+    # 皮肤模型：AUTO 自动 / SLIM 纤细
+    skinVariant: AUTO
+    metaData: {}
+    events:
+      on-spawn:
+        - "[message] &a勇者伙伴来到了你的身边"

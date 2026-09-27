@@ -33,6 +33,7 @@ import org.bukkit.entity.Interaction;
 import org.bukkit.entity.Llama;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Mob;
+import org.bukkit.entity.Villager;
 import org.bukkit.entity.Panda;
 import org.bukkit.entity.Parrot;
 import org.bukkit.entity.Phantom;
@@ -62,6 +63,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ThreadLocalRandom;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
@@ -94,12 +96,26 @@ public class PetManger {
     private final Map<UUID, BlindBoxRevealInteraction> blindBoxRevealInteractions = new ConcurrentHashMap<>();
     private final Map<UUID, AutoTravelState> autoTravelStates = new ConcurrentHashMap<>();
     private final FoliaSchedulers.TaskHandle followTask;
+    private final FancyNpcPetService fancyNpcPetService;
     private int internalSpawnDepth;
 
     public PetManger(QcPet plugin) {
         this.plugin = plugin;
+        // 仅在 FancyNpcs 插件存在时才加载 FancyNpcPetService，避免类加载错误
+        this.fancyNpcPetService = plugin.getServer().getPluginManager().isPluginEnabled("FancyNpcs")
+                ? new FancyNpcPetService(plugin)
+                : null;
         this.followTask = FoliaSchedulers.runTimer(plugin, 1L, 1L, this::tickVisiblePets);
         registerQcLevelExpBoostProvider();
+    }
+
+    public FancyNpcPetService getFancyNpcPetService() {
+        return fancyNpcPetService;
+    }
+
+    /** 供 FancyNpcPetService 反查宠物使用 */
+    public java.util.Collection<java.util.List<Pet>> getAllPetsForLookup() {
+        return pets.values();
     }
 
     private void registerQcLevelExpBoostProvider() {
@@ -303,6 +319,9 @@ public class PetManger {
                 );
                 if (canAccessEntity(updated.entity()) && updated.entity().isValid()) {
                     updated = applyEntityState(player, updated, updated.entity());
+                } else if (updated.entity() == null && fancyNpcPetService != null) {
+                    // PLAYER 类型宠物：同步 FancyNpcs NPC 显示名
+                    fancyNpcPetService.updateName(petId, getDisplayName(updated, player));
                 }
                 replacePet(player, updated);
                 executePetEvent(player, updated, "on-rename");
@@ -918,10 +937,24 @@ public class PetManger {
     }
 
     public void clear() {
-        pets.values().forEach(playerPets -> playerPets.forEach(this::removeEntity));
+        pets.values().forEach(playerPets -> playerPets.forEach(this::removeEntityDirect));
         pets.clear();
         blindBoxRevealInteractions.clear();
         followTask.cancel();
+        if (fancyNpcPetService != null) {
+            fancyNpcPetService.removeAll();
+        }
+    }
+
+    private void removeEntityDirect(Pet pet) {
+        // 禁用时直接清理，不调度任务
+        if (fancyNpcPetService != null) {
+            fancyNpcPetService.remove(pet.id());
+        }
+        Entity entity = pet.entity();
+        if (entity != null && entity.isValid()) {
+            entity.remove();
+        }
     }
 
     public String getDisplayName(Pet pet, Player viewer) {
@@ -1143,9 +1176,14 @@ public class PetManger {
         cleanupBlindBoxRevealInteraction(pet.owner() == null ? null : pet.owner().getUniqueId(), pet.id());
         clearAutoTravel(pet.owner(), pet.id());
         Entity entity = pet.entity();
-        if (entity != null) {
-            FoliaSchedulers.runEntity(plugin, entity, () -> removePetEntity(pet, entity));
+        // 清理 FancyNpcs NPC（PLAYER 类型宠物）
+        if (fancyNpcPetService != null) {
+            fancyNpcPetService.remove(pet.id());
         }
+        if (entity == null) {
+            return;
+        }
+        FoliaSchedulers.runEntity(plugin, entity, () -> removePetEntity(pet, entity));
     }
 
     private void removePetEntity(Pet pet, Entity entity) {
@@ -1193,11 +1231,14 @@ public class PetManger {
             return;
         }
         Entity entity = pet.entity();
+        // PLAYER 类型宠物：entity 为 null 但 NPC 由 FancyNpcPetService 托管，
+        // 不能因为 entity==null 就每 tick 重新 spawn
+        boolean isNpcPet = (entity == null && fancyNpcPetService != null && fancyNpcPetService.isAvailable());
         if (entity != null && QcPet.isFolia() && !plugin.getServer().isOwnedByCurrentRegion(entity)) {
             FoliaSchedulers.teleport(entity, player.getLocation());
             return;
         }
-        if (entity == null || !entity.isValid() || entity.isDead()) {
+        if (!isNpcPet && (entity == null || !entity.isValid() || entity.isDead())) {
             try {
                 showPetInternal(player, pet, false, false);
             } catch (Exception exception) {
@@ -1205,7 +1246,9 @@ public class PetManger {
             }
             return;
         }
-        syncBossEntityState(entity);
+        if (entity != null) {
+            syncBossEntityState(entity);
+        }
         Pet updatedPet = applyEntityState(player, pet, entity);
         if (updatedPet != pet) {
             replacePet(player, updatedPet);
@@ -1213,6 +1256,11 @@ public class PetManger {
             entity = updatedPet.entity();
         }
         followOwner(player, pet, entity);
+        // PLAYER 类型宠物：FancyNpcs NPC 同步村民位置、朝向和装备
+        if (entity != null && entity.getType() == EntityType.VILLAGER && fancyNpcPetService != null && fancyNpcPetService.isAvailable()) {
+            fancyNpcPetService.teleport(pet.id(), entity.getLocation());
+            fancyNpcPetService.syncEquipment(pet.id(), entity instanceof LivingEntity le ? le.getEquipment() : null);
+        }
         syncBlindBoxRevealInteraction(pet);
         Pet currentPet = executeTickEvent(player, pet);
         if (currentPet != null && currentPet != pet) {
@@ -1236,6 +1284,10 @@ public class PetManger {
 
     private Pet applyEntityState(Player player, Pet pet, Entity entity) {
         Pet updatedPet = pet;
+        // PLAYER 类型宠物由 FancyNpcPetService 托管，entity 为 null，所有外观由 Npc 处理
+        if (entity == null) {
+            return updatedPet;
+        }
         entity.setInvulnerable(true);
         entity.setPersistent(false);
         applyEntityScale(updatedPet, entity);
@@ -1255,6 +1307,11 @@ public class PetManger {
         }
         entity.customName(LEGACY_SERIALIZER.deserialize(getDisplayName(updatedPet, player)));
         entity.setCustomNameVisible(true);
+        // PLAYER 类型宠物：同步 FancyNpcs NPC 名字
+        if (entity.getType() == EntityType.VILLAGER && entity.getScoreboardTags().contains("qcpet_player_pet")
+                && fancyNpcPetService != null && fancyNpcPetService.isAvailable()) {
+            fancyNpcPetService.updateName(updatedPet.id(), getDisplayName(updatedPet, player));
+        }
         if (entity instanceof ArmorStand armorStand) {
             armorStand.setVisible(false);
             armorStand.setMarker(true);
@@ -1326,7 +1383,13 @@ public class PetManger {
         if (scaleAttribute == null) {
             return;
         }
-        scaleAttribute.setBaseValue(resolvePetScale(pet, petConfig));
+        double scale = resolvePetScale(pet, petConfig);
+        scaleAttribute.setBaseValue(scale);
+        // PLAYER 类型宠物：同步缩放到 FancyNpcs NPC
+        if (entity.getType() == EntityType.VILLAGER && entity.getScoreboardTags().contains("qcpet_player_pet")
+                && fancyNpcPetService != null && fancyNpcPetService.isAvailable()) {
+            fancyNpcPetService.setScale(pet.id(), scale * 0.7);
+        }
     }
 
     private double resolvePetScale(Pet pet, PetConfig petConfig) {
@@ -1351,7 +1414,12 @@ public class PetManger {
         if (pet == null || entity == null) {
             return;
         }
-        entity.setSilent(isPetMuted(pet));
+        // PLAYER 类型宠物（隐身村民）始终静音
+        if (entity.getType() == EntityType.VILLAGER && entity.getScoreboardTags().contains("qcpet_player_pet")) {
+            entity.setSilent(true);
+        } else {
+            entity.setSilent(isPetMuted(pet));
+        }
         applyConfiguredEntityData(entity, pet.data());
         applyConfiguredEntityData(entity, getEntityStateData(pet));
     }
@@ -1602,6 +1670,37 @@ public class PetManger {
 
     private void followOwner(Player player, Pet pet, Entity entity) {
         boolean flyingPet = canPetFly(pet);
+        // PLAYER 类型宠物（FancyNpcs packet NPC）：直接传送，不走 Mob AI
+        if (entity == null) {
+            // PLAYER 类型宠物（FancyNpcs packet NPC）
+            if (fancyNpcPetService == null) {
+                return;
+            }
+            Location npcLoc = fancyNpcPetService.getCurrentLocation(pet.id());
+            if (npcLoc == null) {
+                return;
+            }
+            // 跨世界：直接传到主人位置
+            if (!npcLoc.getWorld().equals(player.getWorld())) {
+                fancyNpcPetService.teleport(pet.id(), player.getLocation());
+                return;
+            }
+            // 计算跟随目标位置
+            Location target = getFollowLocation(player, pet, null, flyingPet);
+            // 远距离直接传送
+            double distSq = npcLoc.distanceSquared(player.getLocation());
+            if (distSq >= TELEPORT_DISTANCE_SQUARED) {
+                fancyNpcPetService.teleport(pet.id(), target);
+                return;
+            }
+            // 中近距离：每 tick 发移动包，客户端平滑插值
+            if (npcLoc.distanceSquared(target) > 0.04) {
+                fancyNpcPetService.teleport(pet.id(), target);
+            }
+            // 看向主人
+            fancyNpcPetService.lookAt(player, pet.id(), player.getLocation());
+            return;
+        }
         if (handleAutoTravel(player, pet, entity, flyingPet)) {
             return;
         }
@@ -1655,7 +1754,10 @@ public class PetManger {
                 FoliaSchedulers.teleport(entity, targetLocation);
                 return;
             }
-            NmsPetAiController.moveGroundPet(mob, targetLocation, getFollowGroundSpeed(pet));
+                        double followSpeed = (mob.getType() == EntityType.VILLAGER)
+                    ? Math.max(0.05D, 0.5D * getPetMovementMultiplier(pet))
+                    : getFollowGroundSpeed(pet);
+            NmsPetAiController.moveGroundPet(mob, targetLocation, followSpeed);
             return;
         }
         if (entity instanceof Player playerEntity && playerEntity != player) {
@@ -1688,28 +1790,49 @@ public class PetManger {
         }
 
         entity.setRotation(rider.getLocation().getYaw(), entity.getLocation().getPitch());
-        Vector movementVector = resolveMountedMovementVector(rider, pet, entity, flyingPet);
-        if (movementVector == null) {
-            if (entity instanceof Mob mob) {
-                NmsPetAiController.stop(mob);
-            }
-            if (flyingPet) {
-                entity.setVelocity(new Vector(0D, 0D, 0D));
-            } else {
-                Vector currentVelocity = entity.getVelocity();
-                entity.setVelocity(new Vector(0D, Math.min(currentVelocity.getY(), 0D), 0D));
-            }
-            entity.setFallDistance(0F);
-            return true;
-        }
+        Vector targetVelocity = resolveMountedMovementVector(rider, pet, entity, flyingPet);
+        Vector currentVelocity = entity.getVelocity();
 
         if (entity instanceof Mob mob) {
             NmsPetAiController.stop(mob);
         }
-        applyMountedGroundStep(entity, movementVector);
-        if (!flyingPet) {
-            applyMountedWaterFloat(pet, entity, movementVector);
+
+        if (flyingPet) {
+            // 飞行宠物保持原逻辑：目标速度直达
+            entity.setVelocity(targetVelocity == null ? new Vector(0D, 0D, 0D) : targetVelocity);
+            entity.setFallDistance(0F);
+            return true;
         }
+
+        // 地面宠物：加惯性
+        // - 有输入时按 accel 向目标速度插值（逐渐提速，不瞬间最大）
+        // - 无输入时按 friction 衰减（滑行一段再停，不瞬间静止）
+        double newX;
+        double newZ;
+        if (targetVelocity == null) {
+            double friction = getRiddenGroundFriction();
+            newX = currentVelocity.getX() * friction;
+            newZ = currentVelocity.getZ() * friction;
+            if (Math.abs(newX) < 0.005D) newX = 0D;
+            if (Math.abs(newZ) < 0.005D) newZ = 0D;
+        } else {
+            double accel = getRiddenGroundAccel();
+            newX = currentVelocity.getX() + (targetVelocity.getX() - currentVelocity.getX()) * accel;
+            newZ = currentVelocity.getZ() + (targetVelocity.getZ() - currentVelocity.getZ()) * accel;
+            // 钳制：不能超过目标速度
+            double targetLen = Math.sqrt(targetVelocity.getX() * targetVelocity.getX()
+                    + targetVelocity.getZ() * targetVelocity.getZ());
+            double newLen = Math.sqrt(newX * newX + newZ * newZ);
+            if (newLen > targetLen && newLen > 1.0E-6D) {
+                newX = newX / newLen * targetLen;
+                newZ = newZ / newLen * targetLen;
+            }
+        }
+
+        // Y 分量保留当前速度，让原版重力自然生效
+        Vector movementVector = new Vector(newX, currentVelocity.getY(), newZ);
+        applyMountedGroundStep(entity, movementVector);
+        applyMountedWaterFloat(pet, entity, movementVector);
         entity.setVelocity(movementVector);
         entity.setFallDistance(0F);
         return true;
@@ -1731,12 +1854,10 @@ public class PetManger {
             return null;
         }
 
-        Vector forwardVector = rider.getLocation().getDirection().setY(0D);
-        if (forwardVector.lengthSquared() <= 1.0E-6D) {
-            forwardVector = new Vector(0D, 0D, 1D);
-        } else {
-            forwardVector.normalize();
-        }
+        // 用 yaw 直接算水平朝向；玩家抬头/低头时 getDirection().setY(0) 会塌缩成零向量，
+        // 原来的 fallback 会把方向钉到 Z+，导致低头按 W 时宠物往 Z 轴正方向跑
+        double yawRad = Math.toRadians(rider.getLocation().getYaw());
+        Vector forwardVector = new Vector(-Math.sin(yawRad), 0D, Math.cos(yawRad));
         Vector rightVector = new Vector(-forwardVector.getZ(), 0D, forwardVector.getX());
         Vector movement = forwardVector.multiply(forward).add(rightVector.multiply(strafe));
         if (movement.lengthSquared() > 1.0E-6D) {
@@ -1763,6 +1884,24 @@ public class PetManger {
         return Math.max(0.05D, plugin.getConfig().getDouble("pet.ride.ground-speed", 0.55D) * getPetMovementMultiplier(pet));
     }
 
+    /**
+     * 地面骑乘加速度系数：每 tick 向目标速度靠拢的比例。
+     * 1.0 = 瞬间达到目标速度；0.35 ≈ 5-6 tick 到 90% 速度，手感更柔和。
+     */
+    private double getRiddenGroundAccel() {
+        return Math.max(0.05D, Math.min(1.0D,
+                plugin.getConfig().getDouble("pet.ride.ground-accel", 0.35D)));
+    }
+
+    /**
+     * 地面骑乘摩擦系数：无输入时每 tick 保留当前水平速度的比例。
+     * 1.0 = 永不减速；0.55 ≈ 8-10 tick 滑行到停，有惯性感。
+     */
+    private double getRiddenGroundFriction() {
+        return Math.max(0.05D, Math.min(1.0D,
+                plugin.getConfig().getDouble("pet.ride.ground-friction", 0.55D)));
+    }
+
     private double getRiddenFlyingSpeed(Pet pet) {
         return Math.max(0.05D, plugin.getConfig().getDouble("pet.ride.flying-speed", 0.45D) * getPetMovementMultiplier(pet));
     }
@@ -1784,7 +1923,9 @@ public class PetManger {
     }
 
     private void applyMountedGroundStep(Entity entity, Vector movementVector) {
-        if (!entity.isOnGround() && !isEntityNearGround(entity)) {
+        // 只在真正落地时触发一次上台阶跳跃；空中不再重复触发，
+        // 否则顶墙行走时每 tick 都会把 Y 拉回冲量值，形成持续上升
+        if (!entity.isOnGround()) {
             return;
         }
         Vector horizontalMovement = movementVector.clone().setY(0D);
@@ -1813,7 +1954,10 @@ public class PetManger {
             if (!hasSupportAtOffset(entity, offsetX, offsetY, offsetZ)) {
                 continue;
             }
-            movementVector.setY(Math.max(movementVector.getY(), step));
+            // 原版玩家跳跃初速约 0.42；1 格台阶给 0.45，2 格给 0.55，
+            // 靠这一次冲量越过去后由重力接管，不再每 tick 重复抬升
+            double jumpImpulse = 0.45D + (step - 1) * 0.1D;
+            movementVector.setY(Math.max(movementVector.getY(), jumpImpulse));
             return;
         }
     }
@@ -2619,23 +2763,39 @@ public class PetManger {
         }
     }
 
+    /**
+     * PLAYER 类型宠物走 FancyNpcs packet NPC，不产生 Bukkit Entity。
+     * 返回 null，实际 Npc 实例由 FancyNpcPetService 托管。
+     */
     private Entity spawnPlayerPetEntity(Player player, Pet pet) {
-        if (!NmsPlayerPetController.isAvailable()) {
-            Throwable error = NmsPlayerPetController.getInitializationError();
-            if (error == null) {
-                throw new IllegalStateException("玩家宠物 NMS 适配器不可用: owner="
-                        + player.getName()
-                        + ", petId=" + pet.id()
-                        + ", petType=" + pet.type()
-                        + ", world=" + player.getWorld().getName());
-            }
-            throw new IllegalStateException("玩家宠物 NMS 适配器初始化失败: owner="
-                    + player.getName()
-                    + ", petId=" + pet.id()
-                    + ", petType=" + pet.type()
-                    + ", world=" + player.getWorld().getName(), error);
+        // 服务端真实实体：隐身村民（Mob，能走 NmsPetAiController 移动 AI，能点击/骑乘）
+        Villager villager = (Villager) player.getWorld().spawnEntity(player.getLocation(), EntityType.VILLAGER);
+        villager.setInvisible(true);
+        villager.setAI(true);
+        villager.setSilent(true);
+        villager.setAdult();
+        villager.setInvulnerable(true);
+        villager.setCustomNameVisible(false);
+        villager.setRemoveWhenFarAway(false);
+        villager.getEquipment().clear();
+        villager.addScoreboardTag("qcpet_player_pet");
+        NmsPetAiController.stripMobAi(villager);
+
+        // 客户端显示：FancyNpcs NPC（玩家模型+皮肤）
+        if (fancyNpcPetService != null && fancyNpcPetService.isAvailable()) {
+            PetConfig petConfig = plugin.getPetConfigManger().pets.get(pet.type());
+            String skinId = petConfig == null ? "" : petConfig.skin();
+            String skinVariant = petConfig == null ? "AUTO" : petConfig.skinVariant();
+            fancyNpcPetService.spawn(
+                    player,
+                    pet,
+                    getDisplayName(pet, player),
+                    player.getLocation(),
+                    skinId,
+                    skinVariant
+            );
         }
-        return NmsPlayerPetController.spawnPlayerPet(player, getDisplayName(pet, player), player.getLocation());
+        return villager;
     }
 
     public void handlePetDamaged(Pet pet, Entity damager) {

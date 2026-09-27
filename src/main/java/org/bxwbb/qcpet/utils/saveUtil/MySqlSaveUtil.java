@@ -21,7 +21,7 @@ import java.util.UUID;
  * 基于HikariCP连接池实现，自动建表、序列自增ID、增删改查宠物数据
  * 实现AutoCloseable，使用完毕需关闭连接池释放资源
  */
-public class MySqlSaveUtil implements AutoCloseable  {
+public class MySqlSaveUtil implements PetStorage  {
 
     // 默认连接池最大连接数
     private static final int DEFAULT_MAXIMUM_POOL_SIZE = 10;

@@ -36,7 +36,7 @@ public class PetUtil {
     }
 
     public Pet getPet(long id) {
-        return plugin.getMySqlSaveUtil()
+        return plugin.getPetStorage()
                 .findPet(id)
                 .map(this::toPet)
                 .orElse(null);
@@ -50,7 +50,7 @@ public class PetUtil {
         if (player == null) {
             throw new IllegalArgumentException("player cannot be null");
         }
-        return plugin.getMySqlSaveUtil()
+        return plugin.getPetStorage()
                 .findPetsByPlayer(player.getUniqueId())
                 .stream()
                 .map(record -> toPet(record, player))
@@ -65,7 +65,7 @@ public class PetUtil {
     }
 
     public List<Pet> getPets(UUID playerUuid) {
-        return plugin.getMySqlSaveUtil()
+        return plugin.getPetStorage()
                 .findPetsByPlayer(playerUuid)
                 .stream()
                 .map(this::toPet)
@@ -76,7 +76,7 @@ public class PetUtil {
         if (pet == null) {
             throw new IllegalArgumentException("pet cannot be null");
         }
-        plugin.getMySqlSaveUtil().savePet(new MySqlSaveUtil.PetRecord(
+        plugin.getPetStorage().savePet(new MySqlSaveUtil.PetRecord(
                 pet.id(),
                 pet.name(),
                 pet.type(),
@@ -96,7 +96,7 @@ public class PetUtil {
     }
 
     public long nextPetId() {
-        return plugin.getMySqlSaveUtil().nextPetId();
+        return plugin.getPetStorage().nextPetId();
     }
 
     public void bindPetToPlayer(Player player, long petId) {
@@ -107,7 +107,7 @@ public class PetUtil {
     }
 
     public void bindPetToPlayer(UUID playerUuid, long petId) {
-        plugin.getMySqlSaveUtil().bindPetToPlayer(playerUuid, petId);
+        plugin.getPetStorage().bindPetToPlayer(playerUuid, petId);
     }
 
     public boolean deletePet(Player player, long petId) {
@@ -118,7 +118,7 @@ public class PetUtil {
     }
 
     public boolean deletePet(UUID playerUuid, long petId) {
-        return plugin.getMySqlSaveUtil().deletePet(playerUuid, petId);
+        return plugin.getPetStorage().deletePet(playerUuid, petId);
     }
 
     private Pet toPet(MySqlSaveUtil.PetRecord record) {

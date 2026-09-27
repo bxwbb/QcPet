@@ -32,9 +32,9 @@ public final class NmsPlayerPetController {
         return initializationError;
     }
 
-    public static Player spawnPlayerPet(Player owner, String displayName, Location location) {
+    public static Player spawnPlayerPet(Player owner, String displayName, Location location, Object skinTexture) {
         try {
-            return getRequiredAdapter().spawnPlayerPet(owner, displayName, location);
+            return getRequiredAdapter().spawnPlayerPet(owner, displayName, location, skinTexture);
         } catch (ReflectiveOperationException exception) {
             throw new IllegalStateException("玩家宠物 NMS 生成失败", exception);
         }
@@ -107,6 +107,7 @@ public final class NmsPlayerPetController {
         private final Method craftWorldGetHandle;
         private final Method craftPlayerGetHandle;
         private final Constructor<?> gameProfileConstructor;
+        private final Class<?> gameProfileClass;
         private final Method clientInformationCreateDefault;
         private final Constructor<?> serverPlayerConstructor;
         private final Field serverPlayerGameProfileField;
@@ -177,6 +178,7 @@ public final class NmsPlayerPetController {
             craftWorldGetHandle = craftWorldClass.getMethod("getHandle");
             craftPlayerGetHandle = craftPlayerClass.getMethod("getHandle");
             gameProfileConstructor = gameProfileClass.getConstructor(UUID.class, String.class);
+            this.gameProfileClass = gameProfileClass;
             clientInformationCreateDefault = clientInformationClass.getMethod("createDefault");
             serverPlayerConstructor = serverPlayerClass.getConstructor(minecraftServerClass, serverLevelClass, gameProfileClass, clientInformationClass);
             serverPlayerGameProfileField = serverPlayerClass.getField("gameProfile");
@@ -216,13 +218,20 @@ public final class NmsPlayerPetController {
             removalReasonDiscarded = Enum.valueOf((Class<Enum>) removalReasonClass, "DISCARDED");
         }
 
-        private Player spawnPlayerPet(Player owner, String displayName, Location location) throws ReflectiveOperationException {
+        private Player spawnPlayerPet(Player owner, String displayName, Location location, Object skinTexture) throws ReflectiveOperationException {
             Object server = craftServerGetServer.invoke(owner.getServer());
             Object level = craftWorldGetHandle.invoke(location.getWorld());
             UUID uuid = UUID.randomUUID();
             String localName = sanitizeProfileName(displayName, owner.getName());
             Object profile = gameProfileConstructor.newInstance(uuid, localName);
-            Object fakePlayer = serverPlayerConstructor.newInstance(server, level, gameProfileConstructor.newInstance(uuid, ""), clientInformationCreateDefault.invoke(null));
+
+            // 把皮肤 textures 加到 GameProfile
+            if (skinTexture != null) {
+                Object properties = gameProfileClass.getMethod("getProperties").invoke(profile);
+                properties.getClass().getMethod("put", Object.class).invoke(properties, skinTexture);
+            }
+
+            Object fakePlayer = serverPlayerConstructor.newInstance(server, level, profile, clientInformationCreateDefault.invoke(null));
             serverPlayerGameProfileField.set(fakePlayer, profile);
 
             applyLocation(fakePlayer, location);
@@ -231,14 +240,15 @@ public final class NmsPlayerPetController {
             entitySetNoGravity.invoke(fakePlayer, true);
             invokeOptional(entitySetCustomNameVisible, fakePlayer, true);
 
-            int entityId = (int) entityGetId.invoke(fakePlayer);
-            Object playerInfoPacket = createPlayerInfoPacket(fakePlayer, owner);
-            Object addEntityPacket = createAddEntityPacket(fakePlayer, location);
-            Object bundlePacket = bundlePacketConstructor.newInstance(List.of(playerInfoPacket, addEntityPacket));
+            // 把实体真实加入世界，这样服务端会自动处理点击、骑乘、碰撞
+            Class<?> entityClass = Class.forName("net.minecraft.world.entity.Entity");
+            Method addFreshEntity = level.getClass().getMethod("addFreshEntity", entityClass);
+            addFreshEntity.invoke(level, fakePlayer);
 
+            // 从 Tab 列表移除（服务端自动加了 PlayerInfo，我们删掉）
             for (Player viewer : owner.getWorld().getPlayers()) {
-                sendOnPlayerScheduler(viewer, bundlePacket);
-                scheduleTabRemove(viewer, uuid);
+                Object removePacket = playerInfoRemovePacketConstructor.newInstance(List.of(uuid));
+                sendOnPlayerScheduler(viewer, removePacket);
             }
             return (Player) entityGetBukkitEntity.invoke(fakePlayer);
         }

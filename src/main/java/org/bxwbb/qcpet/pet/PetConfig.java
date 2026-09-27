@@ -27,6 +27,8 @@ public record PetConfig(
         int bathRewardExp,
         int feedRewardExp,
         boolean saveEntityData,
+        String skin,
+        String skinVariant,
         Map<String, Object> metaData,
         EntityType entityType,
         String levelExpRequirement,
