@@ -320,8 +320,11 @@ public class PetManger {
                 if (canAccessEntity(updated.entity()) && updated.entity().isValid()) {
                     updated = applyEntityState(player, updated, updated.entity());
                 } else if (updated.entity() == null && fancyNpcPetService != null) {
-                    // PLAYER 类型宠物：同步 FancyNpcs NPC 显示名
-                    fancyNpcPetService.updateName(petId, getDisplayName(updated, player));
+                    // PLAYER 类型宠物：同步 FancyNpcs NPC 显示名（带 modelId 前缀）
+                    PetConfig cfg = plugin.getPetConfigManger().pets.get(updated.type());
+                    String mid = cfg == null ? null : cfg.modelId();
+                    boolean hasMid = mid != null && !mid.isBlank();
+                    fancyNpcPetService.updateName(petId, getDisplayName(updated, player, hasMid));
                 }
                 replacePet(player, updated);
                 executePetEvent(player, updated, "on-rename");
@@ -958,17 +961,14 @@ public class PetManger {
     }
 
     public String getDisplayName(Pet pet, Player viewer) {
+        return getDisplayName(pet, viewer, false);
+    }
+
+    public String getDisplayName(Pet pet, Player viewer, boolean includeModelPrefix) {
         if (shouldDisplayAsBlindBox(pet)) {
             return "???";
         }
         String name = pet.request(pet.name());
-        PetConfig petConfig = plugin.getPetConfigManger().pets.get(pet.type());
-        if (petConfig != null) {
-            String modelId = petConfig.modelId();
-            if (modelId != null && !modelId.isBlank()) {
-                name = "@cet_" + modelId.trim() + "@" + name;
-            }
-        }
         if (viewer != null && plugin.getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             name = PlaceholderAPI.setPlaceholders(viewer, name);
         }
@@ -977,6 +977,15 @@ public class PetManger {
         }
         if (needsFeed(pet)) {
             name = applyStateDecoration(pet, name, "feedNeedPrefix", "feedNeedSuffix");
+        }
+        if (includeModelPrefix) {
+            PetConfig petConfig = plugin.getPetConfigManger().pets.get(pet.type());
+            if (petConfig != null) {
+                String modelId = petConfig.modelId();
+                if (modelId != null && !modelId.isBlank()) {
+                    name = "@cet_" + modelId.trim() + "@" + name;
+                }
+            }
         }
         return name;
     }
@@ -1305,12 +1314,28 @@ public class PetManger {
             textDisplay.setTeleportDuration(1);
             return updatedPet;
         }
-        entity.customName(LEGACY_SERIALIZER.deserialize(getDisplayName(updatedPet, player)));
-        entity.setCustomNameVisible(true);
-        // PLAYER 类型宠物：同步 FancyNpcs NPC 名字
-        if (entity.getType() == EntityType.VILLAGER && entity.getScoreboardTags().contains("qcpet_player_pet")
-                && fancyNpcPetService != null && fancyNpcPetService.isAvailable()) {
-            fancyNpcPetService.updateName(updatedPet.id(), getDisplayName(updatedPet, player));
+        // 根据是否配置了 modelId 决定实体名称的处理方式
+        PetConfig petConfig = plugin.getPetConfigManger().pets.get(updatedPet.type());
+        String modelId = (petConfig != null) ? petConfig.modelId() : null;
+        boolean hasModelId = modelId != null && !modelId.isBlank();
+        // PLAYER 类型宠物：entity 是隐身村民，客户端显示是 FancyNpc
+        boolean isPlayerTypePet = entity.getType() == EntityType.VILLAGER
+                && entity.getScoreboardTags().contains("qcpet_player_pet");
+        if (isPlayerTypePet) {
+            // 隐身村民：显示真名称，始终可见
+            entity.customName(LEGACY_SERIALIZER.deserialize(getDisplayName(updatedPet, player, false)));
+            entity.setCustomNameVisible(true);
+            // FancyNpc：带 @cet_xxx@ 前缀的名称，让 CET 识别换模型
+            String npcName = hasModelId
+                    ? getDisplayName(updatedPet, player, true)
+                    : getDisplayName(updatedPet, player, false);
+            if (fancyNpcPetService != null && fancyNpcPetService.isAvailable()) {
+                fancyNpcPetService.updateName(updatedPet.id(), npcName);
+            }
+        } else {
+            // 普通实体：直接显示真名称
+            entity.customName(LEGACY_SERIALIZER.deserialize(getDisplayName(updatedPet, player, false)));
+            entity.setCustomNameVisible(true);
         }
         if (entity instanceof ArmorStand armorStand) {
             armorStand.setVisible(false);
@@ -2775,7 +2800,7 @@ public class PetManger {
         villager.setSilent(true);
         villager.setAdult();
         villager.setInvulnerable(true);
-        villager.setCustomNameVisible(false);
+        villager.setCustomNameVisible(true);
         villager.setRemoveWhenFarAway(false);
         villager.getEquipment().clear();
         villager.addScoreboardTag("qcpet_player_pet");
@@ -2786,10 +2811,15 @@ public class PetManger {
             PetConfig petConfig = plugin.getPetConfigManger().pets.get(pet.type());
             String skinId = petConfig == null ? "" : petConfig.skin();
             String skinVariant = petConfig == null ? "AUTO" : petConfig.skinVariant();
+            String modelId = petConfig == null ? null : petConfig.modelId();
+            boolean hasModelId = modelId != null && !modelId.isBlank();
+            String npcName = hasModelId
+                    ? getDisplayName(pet, player, true)
+                    : getDisplayName(pet, player, false);
             fancyNpcPetService.spawn(
                     player,
                     pet,
-                    getDisplayName(pet, player),
+                    npcName,
                     player.getLocation(),
                     skinId,
                     skinVariant
